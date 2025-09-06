@@ -8,6 +8,38 @@ Any modifications to the database schema require explicit double-confirmation fr
 
 ---
 
+## 🚨 CRITICAL FLIGHT SEARCH POLICY
+
+**⚠️ ALWAYS USE THE DEFAULT FLIGHT SEARCH FUNCTION ⚠️**
+
+**Required Function**: `EnhancedFlightSearchClient.search_flights()`
+**Location**: `Main/enhanced_flight_search.py`
+
+### Mandatory Usage Policy:
+- **NEVER create custom search scripts** - they may miss critical functionality
+- **ALWAYS use** `client.search_flights(departure_id, arrival_id, outbound_date)` 
+- **NEVER bypass** the enhanced flight search system
+- **Example Correct Usage**:
+  ```python
+  from enhanced_flight_search import EnhancedFlightSearchClient
+  client = EnhancedFlightSearchClient()
+  results = client.search_flights('POM', 'CDG', '2025-10-10')
+  ```
+
+### Why This Function is Required:
+- ✅ **Cache-first strategy** - checks database before API calls
+- ✅ **Complete data storage** - stores all results, segments, airlines, airports
+- ✅ **Connection handling** - properly handles multi-stop international flights
+- ✅ **Error handling** - robust error management and logging
+- ✅ **Data validation** - validates all parameters before API calls
+- ✅ **Results parsing** - correctly processes complex API responses
+
+### Common Mistake:
+❌ Creating custom scripts that call SerpAPI directly
+✅ Using the centralized `search_flights()` function
+
+---
+
 ## �📋 Complete Function Documentation with Flow Diagrams
 
 ---
