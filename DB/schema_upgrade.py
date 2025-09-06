@@ -152,15 +152,6 @@ def test_enhanced_schema():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, test_search_data)
         
-        # Test airports table
-        cursor.execute("""
-            INSERT OR IGNORE INTO airports 
-            (airport_code, airport_name, city, country, country_code)
-            VALUES 
-            ('LAX', 'Los Angeles International Airport', 'Los Angeles', 'United States', 'US'),
-            ('JFK', 'John F. Kennedy International Airport', 'New York', 'United States', 'US')
-        """)
-        
         # Test airlines table
         cursor.execute("""
             INSERT OR IGNORE INTO airlines 
@@ -177,15 +168,11 @@ def test_enhanced_schema():
         cursor.execute("SELECT COUNT(*) FROM flight_searches")
         search_count = cursor.fetchone()[0]
         
-        cursor.execute("SELECT COUNT(*) FROM airports")
-        airport_count = cursor.fetchone()[0]
-        
         cursor.execute("SELECT COUNT(*) FROM airlines")
         airline_count = cursor.fetchone()[0]
         
         print(f"✅ Schema test completed:")
         print(f"   - Flight searches: {search_count}")
-        print(f"   - Airports: {airport_count}")
         print(f"   - Airlines: {airline_count}")
         
         return True

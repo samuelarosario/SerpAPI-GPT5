@@ -57,7 +57,6 @@ class FlightDataProcessor:
                 'search_id': search_id,
                 'api_record_id': api_record_id,
                 'flights_processed': 0,
-                'airports_extracted': 0,
                 'airlines_extracted': 0,
                 'errors': []
             }
@@ -69,10 +68,6 @@ class FlightDataProcessor:
                 # Process flight results
                 flights_stats = self._process_flight_results(search_id, raw_response)
                 processing_stats.update(flights_stats)
-                
-                # Extract and store airports
-                airport_count = self._extract_airports(raw_response)
-                processing_stats['airports_extracted'] = airport_count
                 
                 # Extract and store airlines
                 airline_count = self._extract_airlines(raw_response)
@@ -299,56 +294,6 @@ class FlightDataProcessor:
              duration_minutes, is_overnight)
             VALUES (?, ?, ?, ?, ?, ?)
         """, layover_data)
-    
-    def _extract_airports(self, response: Dict[str, Any]) -> int:
-        """Extract and store airport information"""
-        
-        airports_stored = 0
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        try:
-            if 'airports' in response:
-                for airport_group in response['airports']:
-                    # Process departure airports
-                    for airport_info in airport_group.get('departure', []):
-                        self._store_airport(cursor, airport_info)
-                        airports_stored += 1
-                    
-                    # Process arrival airports
-                    for airport_info in airport_group.get('arrival', []):
-                        self._store_airport(cursor, airport_info)
-                        airports_stored += 1
-            
-            conn.commit()
-            
-        finally:
-            conn.close()
-        
-        return airports_stored
-    
-    def _store_airport(self, cursor, airport_info: Dict[str, Any]):
-        """Store individual airport information"""
-        
-        airport = airport_info.get('airport', {})
-        
-        airport_data = (
-            airport.get('id'),
-            airport.get('name'),
-            airport_info.get('city'),
-            airport_info.get('country'),
-            airport_info.get('country_code'),
-            airport_info.get('image'),
-            airport_info.get('thumbnail'),
-            datetime.now().isoformat()
-        )
-        
-        cursor.execute("""
-            INSERT OR REPLACE INTO airports 
-            (airport_code, airport_name, city, country, country_code, 
-             image_url, thumbnail_url, last_seen)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, airport_data)
     
     def _extract_airlines(self, response: Dict[str, Any]) -> int:
         """Extract and store airline information"""
