@@ -32,7 +32,7 @@ DEFAULT_SEARCH_PARAMS = {
 
 # Database configuration
 DATABASE_CONFIG = {
-    'db_path': '../DB/Main_DB.db',
+    'db_path': 'DB/Main_DB.db',  # Fixed: relative from project root
     'backup_on_error': True,
     'connection_timeout': 30,
 }

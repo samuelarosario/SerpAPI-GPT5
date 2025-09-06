@@ -36,7 +36,7 @@ except ImportError:
 class FlightSearchCache:
     """Manages local database cache for flight searches"""
     
-    def __init__(self, db_path: str = "../DB/Main_DB.db"):
+    def __init__(self, db_path: str = "DB/Main_DB.db"):
         """Initialize cache manager"""
         self.db_path = db_path
         self.logger = logging.getLogger(__name__)
@@ -71,16 +71,17 @@ class FlightSearchCache:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.cursor()
                 
-                # Search for recent cached results
+                # Search for recent cached results - simplified lookup
                 cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
                 
                 query = """
-                SELECT fs.*, ar.raw_response, ar.query_timestamp
+                SELECT fs.*, COUNT(fr.id) as flight_count
                 FROM flight_searches fs
-                JOIN api_queries ar ON fs.search_id = ar.search_term
+                LEFT JOIN flight_results fr ON fs.search_id = fr.search_id
                 WHERE fs.cache_key = ? 
-                AND ar.query_timestamp > ?
-                ORDER BY ar.query_timestamp DESC
+                AND fs.created_at > ?
+                GROUP BY fs.search_id
+                ORDER BY fs.created_at DESC
                 LIMIT 1
                 """
                 
@@ -108,16 +109,20 @@ class FlightSearchCache:
                     cursor.execute(results_query, (result['search_id'],))
                     flight_results = cursor.fetchall()
                     
-                    # Format response similar to API response
+                    # Format response from cached flight results
                     cached_response = {
                         'search_id': result['search_id'],
                         'search_parameters': json.loads(result['raw_parameters']) if result['raw_parameters'] else {},
-                        'raw_response': json.loads(result['raw_response']),
                         'cached': True,
-                        'cache_timestamp': result['query_timestamp'],
-                        'flight_results_count': len(flight_results),
-                        'processing_status': 'cached_data'
+                        'cache_timestamp': result['created_at'],
+                        'flight_results_count': result['flight_count'],
+                        'processing_status': 'cached_data',
+                        'flight_results': []
                     }
+                    
+                    # Add flight results data if available
+                    if flight_results:
+                        cached_response['flight_results'] = [dict(row) for row in flight_results]
                     
                     return cached_response
                 else:
@@ -549,7 +554,7 @@ class FlightSearchValidator:
 class EnhancedFlightSearchClient:
     """Enhanced Flight Search Client with Local Database Cache"""
     
-    def __init__(self, api_key: Optional[str] = None, db_path: str = "../DB/Main_DB.db"):
+    def __init__(self, api_key: Optional[str] = None, db_path: str = "DB/Main_DB.db"):
         """Initialize the enhanced client"""
         self.api_key = api_key or get_api_key()
         self.db_path = db_path
