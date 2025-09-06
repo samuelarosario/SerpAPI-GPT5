@@ -191,32 +191,6 @@ class SerpAPIFlightClient:
         if self.rate_limiter and not self.rate_limiter.can_make_request():
             raise Exception("Rate limit exceeded. Please wait before making another request.")
 
-        # Import approval system
-        from simple_api_approval import require_approval
-        
-        # Create approval prompt parameters (without API key for security)
-        approval_params = {k: v for k, v in params.items() if k != 'api_key'}
-        approval_params['engine'] = self.engine
-        
-        # Generate approval reason
-        route = f"{params.get('departure_id', '?')} → {params.get('arrival_id', '?')}"
-        date_info = params.get('outbound_date', '?')
-        if params.get('return_date'):
-            date_info += f" (return {params.get('return_date')})"
-        approval_reason = f"Flight search: {route} on {date_info}"
-        
-        # Request approval before making API call
-        if not require_approval(approval_params, approval_reason):
-            return {
-                'success': False,
-                'search_id': search_id,
-                'search_timestamp': datetime.now().isoformat(),
-                'search_parameters': params,
-                'data': None,
-                'status': 'declined',
-                'error': 'API call declined by user'
-            }
-
         try:
             # Make API request
             response_data = self._make_request(params)
