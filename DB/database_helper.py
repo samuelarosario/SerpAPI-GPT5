@@ -1,0 +1,243 @@
+"""
+Database Helper Functions for SerpAPI Project
+Provides utilities for interacting with Main_DB.db
+"""
+
+import sqlite3
+import json
+from datetime import datetime
+from typing import Optional, Dict, List, Any
+
+class SerpAPIDatabase:
+    """Helper class for SerpAPI database operations"""
+    
+    def __init__(self, db_path: str = "Main_DB.db"):
+        """Initialize database connection"""
+        self.db_path = db_path
+    
+    def get_connection(self):
+        """Get database connection"""
+        return sqlite3.connect(self.db_path)
+    
+    def insert_api_response(self, 
+                          query_parameters: Dict[str, Any],
+                          raw_response: str,
+                          query_type: str = "search",
+                          status_code: int = 200,
+                          api_endpoint: str = "serpapi",
+                          search_term: str = "") -> int:
+        """
+        Insert API response data into database
+        
+        Args:
+            query_parameters: The parameters used for the API query
+            raw_response: Complete raw response from API
+            query_type: Type of query (search, images, news, etc.)
+            status_code: HTTP status code
+            api_endpoint: API endpoint used
+            search_term: Search term used
+            
+        Returns:
+            int: ID of inserted record
+        """
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Prepare data
+            query_timestamp = datetime.now().isoformat()
+            query_params_json = json.dumps(query_parameters) if query_parameters else "{}"
+            response_size = len(raw_response.encode('utf-8'))
+            
+            # Insert data
+            cursor.execute('''
+                INSERT INTO api_queries 
+                (query_timestamp, query_parameters, raw_response, query_type, 
+                 status_code, response_size, api_endpoint, search_term)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (query_timestamp, query_params_json, raw_response, query_type,
+                  status_code, response_size, api_endpoint, search_term))
+            
+            record_id = cursor.lastrowid
+            
+            # Update metadata
+            self._update_metadata(cursor)
+            
+            conn.commit()
+            print(f"✅ API response saved to database. Record ID: {record_id}")
+            return record_id
+            
+        except sqlite3.Error as e:
+            print(f"❌ Error inserting API response: {e}")
+            conn.rollback()
+            raise
+        
+        finally:
+            conn.close()
+    
+    def get_api_responses(self, 
+                         query_type: Optional[str] = None,
+                         search_term: Optional[str] = None,
+                         limit: int = 100) -> List[Dict]:
+        """
+        Retrieve API responses from database
+        
+        Args:
+            query_type: Filter by query type
+            search_term: Filter by search term
+            limit: Maximum number of records to return
+            
+        Returns:
+            List[Dict]: List of API response records
+        """
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            # Build query
+            query = "SELECT * FROM api_queries WHERE 1=1"
+            params = []
+            
+            if query_type:
+                query += " AND query_type = ?"
+                params.append(query_type)
+            
+            if search_term:
+                query += " AND search_term LIKE ?"
+                params.append(f"%{search_term}%")
+            
+            query += " ORDER BY created_at DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
+            
+            # Get column names
+            columns = [description[0] for description in cursor.description]
+            
+            # Fetch and format results
+            rows = cursor.fetchall()
+            results = []
+            
+            for row in rows:
+                record = dict(zip(columns, row))
+                # Parse JSON fields
+                if record['query_parameters']:
+                    try:
+                        record['query_parameters'] = json.loads(record['query_parameters'])
+                    except json.JSONDecodeError:
+                        pass
+                results.append(record)
+            
+            return results
+            
+        except sqlite3.Error as e:
+            print(f"❌ Error retrieving API responses: {e}")
+            raise
+        
+        finally:
+            conn.close()
+    
+    def get_database_stats(self) -> Dict[str, Any]:
+        """Get database statistics"""
+        
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        try:
+            stats = {}
+            
+            # Total records
+            cursor.execute("SELECT COUNT(*) FROM api_queries")
+            stats['total_records'] = cursor.fetchone()[0]
+            
+            # Records by type
+            cursor.execute("""
+                SELECT query_type, COUNT(*) 
+                FROM api_queries 
+                GROUP BY query_type
+            """)
+            stats['records_by_type'] = dict(cursor.fetchall())
+            
+            # Date range
+            cursor.execute("""
+                SELECT MIN(created_at), MAX(created_at) 
+                FROM api_queries
+            """)
+            date_range = cursor.fetchone()
+            stats['date_range'] = {
+                'earliest': date_range[0],
+                'latest': date_range[1]
+            }
+            
+            # Database metadata
+            cursor.execute("SELECT * FROM database_metadata WHERE id = 1")
+            metadata = cursor.fetchone()
+            if metadata:
+                stats['metadata'] = {
+                    'database_version': metadata[1],
+                    'created_date': metadata[2],
+                    'last_modified': metadata[3]
+                }
+            
+            return stats
+            
+        except sqlite3.Error as e:
+            print(f"❌ Error getting database stats: {e}")
+            raise
+        
+        finally:
+            conn.close()
+    
+    def _update_metadata(self, cursor):
+        """Update database metadata"""
+        cursor.execute("""
+            UPDATE database_metadata 
+            SET last_modified = ?, 
+                total_queries = (SELECT COUNT(*) FROM api_queries)
+            WHERE id = 1
+        """, (datetime.now().isoformat(),))
+
+def test_database_operations():
+    """Test database helper functions"""
+    
+    print("🧪 Testing database operations...")
+    
+    db = SerpAPIDatabase()
+    
+    # Test insert
+    test_params = {
+        "q": "test search",
+        "engine": "google",
+        "location": "United States"
+    }
+    
+    test_response = json.dumps({
+        "search_metadata": {"status": "Success"},
+        "organic_results": [
+            {"title": "Test Result", "link": "https://example.com"}
+        ]
+    })
+    
+    record_id = db.insert_api_response(
+        query_parameters=test_params,
+        raw_response=test_response,
+        query_type="google_search",
+        search_term="test search"
+    )
+    
+    print(f"✅ Test record inserted with ID: {record_id}")
+    
+    # Test retrieve
+    results = db.get_api_responses(limit=5)
+    print(f"✅ Retrieved {len(results)} records")
+    
+    # Test stats
+    stats = db.get_database_stats()
+    print(f"✅ Database stats: {stats['total_records']} total records")
+    
+    print("🎉 Database operations test completed successfully!")
+
+if __name__ == "__main__":
+    test_database_operations()
