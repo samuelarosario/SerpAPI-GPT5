@@ -58,6 +58,16 @@ logs/
 temp/
 tmp/
 
+# Temporary debugging and test scripts (ignore in root directory)
+check_data.py
+debug_search.py
+display_flights.py
+query_flights.py
+repeat_search.py
+search_*.py
+show_*.py
+test_*.py
+
 # API keys (security)
 api_key.txt
 .env
