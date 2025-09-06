@@ -56,11 +56,15 @@ pip install requests sqlite3
 
 ### 3. Database Setup
 
-The database is already initialized. To verify:
+**⚠️ IMPORTANT: Schema modifications are STRICTLY PROHIBITED without explicit owner approval ⚠️**
+
+The database is already initialized with an optimized schema. To verify:
 ```bash
-cd DB
+cd DB  
 python schema_upgrade.py
 ```
+
+Current schema is documented in `DB/current_schema.sql` - this is the canonical reference and should not be modified without explicit double-confirmation.
 
 ### 4. Test the System
 

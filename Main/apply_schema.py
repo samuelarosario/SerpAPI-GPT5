@@ -8,8 +8,8 @@ import sqlite3
 def apply_enhanced_schema():
     """Apply enhanced schema to flight_data.db"""
     
-    # Read schema
-    with open('../DB/enhanced_schema.sql', 'r') as f:
+    # Read current schema (SCHEMA CHANGES RESTRICTED - REQUIRES EXPLICIT APPROVAL)
+    with open('../DB/current_schema.sql', 'r') as f:
         schema_sql = f.read()
     
     # Apply to flight_data.db

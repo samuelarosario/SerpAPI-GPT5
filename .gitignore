@@ -47,6 +47,11 @@ logs/
 *backup*.db
 !Main_DB_backup_*.db
 
+# Schema files (PROTECTED - changes require explicit approval)
+# Uncommenting these lines would ignore schema changes:
+# DB/*_schema.sql
+# DB/schema_*.py
+
 # Temporary files
 *.tmp
 *.temp

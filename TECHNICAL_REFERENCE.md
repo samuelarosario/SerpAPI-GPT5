@@ -1,6 +1,14 @@
 # SerpAPI System - Technical Function Reference
 
-## 📋 Complete Function Documentation with Flow Diagrams
+## � SCHEMA MODIFICATION WARNING
+
+**⚠️ DATABASE SCHEMA CHANGES ARE STRICTLY PROHIBITED ⚠️**
+
+Any modifications to the database schema require explicit double-confirmation from the project owner. Unauthorized schema changes can break the entire system and compromise data integrity. Only data operations (INSERT, UPDATE, DELETE) are permitted without special approval.
+
+---
+
+## �📋 Complete Function Documentation with Flow Diagrams
 
 ---
 

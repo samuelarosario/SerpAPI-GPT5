@@ -1,6 +1,35 @@
 # SerpAPI Flight Search System - Complete Documentation
 
-## 📋 Table of Contents
+## � IMPORTANT: Database Schema Modification Policy
+
+**⚠️ CRITICAL RESTRICTION ⚠️**
+
+Database schema changes are **STRICTLY PROHIBITED** unless explicitly double-confirmed by the project owner. 
+
+### Schema Change Policy:
+- ❌ **NO** unauthorized schema modifications
+- ❌ **NO** table structure changes without approval  
+- ❌ **NO** column additions/deletions without explicit consent
+- ❌ **NO** index modifications without review
+- ✅ **ONLY** data operations (INSERT, UPDATE, DELETE) are permitted
+
+### If Schema Change Required:
+1. **STOP** - Do not proceed with any schema changes
+2. **DOCUMENT** - Clearly document the proposed change and justification
+3. **REQUEST** - Explicitly request approval from project owner
+4. **WAIT** - Wait for explicit double-confirmation before proceeding
+5. **BACKUP** - Create full database backup before any changes
+6. **TEST** - Thoroughly test changes in isolated environment first
+
+### Current Schema Status:
+- **Schema File**: `DB/current_schema.sql` (canonical reference)
+- **Last Generated**: Auto-generated from production database
+- **Tables**: 10 production tables with optimized foreign key relationships
+- **Status**: Production-ready and stable
+
+---
+
+## �📋 Table of Contents
 1. [System Architecture Overview](#system-architecture-overview)
 2. [Core Components](#core-components)
 3. [Function Flow Diagrams](#function-flow-diagrams)

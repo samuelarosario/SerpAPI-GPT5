@@ -29,8 +29,8 @@ def upgrade_database(db_path="Main_DB.db"):
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Read enhanced schema
-        with open("enhanced_schema.sql", "r") as f:
+        # Read current schema
+        with open("current_schema.sql", "r") as f:
             schema_sql = f.read()
         
         # Execute schema upgrade
