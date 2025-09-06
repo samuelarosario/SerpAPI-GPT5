@@ -769,6 +769,210 @@ class EnhancedFlightSearchClient:
                 'source': 'api_exception'
             }
     
+    def search_week_range(self, 
+                         departure_id: str,
+                         arrival_id: str, 
+                         start_date: str,
+                         **kwargs) -> Dict[str, Any]:
+        """
+        Search flights for 7 consecutive days starting from start_date
+        Returns aggregated results with date-wise breakdown and price trends
+        
+        Args:
+            departure_id: Departure airport IATA code
+            arrival_id: Arrival airport IATA code
+            start_date: Starting date for 7-day search (YYYY-MM-DD)
+            **kwargs: Additional search parameters (adults, children, travel_class, etc.)
+            
+        Returns:
+            Dict containing:
+            - success: Boolean indicating overall success
+            - source: 'week_range'
+            - date_range: String showing search range
+            - daily_results: Dict of results for each date
+            - best_week_flights: Top flights across all dates
+            - price_trend: Price analysis across the week
+            - summary: Week search statistics
+        """
+        from datetime import datetime, timedelta
+        
+        self.logger.info(f"Starting week range search: {departure_id} → {arrival_id} from {start_date}")
+        
+        try:
+            # Parse start date
+            start_dt = datetime.strptime(start_date, '%Y-%m-%d')
+        except ValueError:
+            return {
+                'success': False,
+                'error': f'Invalid start_date format: {start_date}. Use YYYY-MM-DD',
+                'source': 'week_range_validation'
+            }
+        
+        # Calculate end date
+        end_dt = start_dt + timedelta(days=6)
+        end_date = end_dt.strftime('%Y-%m-%d')
+        
+        # Initialize results containers
+        daily_results = {}
+        all_flights = []
+        successful_searches = 0
+        total_flights_found = 0
+        
+        # Search each day in the 7-day range
+        for day_offset in range(7):
+            search_date = (start_dt + timedelta(days=day_offset)).strftime('%Y-%m-%d')
+            day_name = (start_dt + timedelta(days=day_offset)).strftime('%A')
+            
+            self.logger.info(f"Searching day {day_offset + 1}/7: {search_date} ({day_name})")
+            
+            # Use existing search_flights method for each date
+            daily_result = self.search_flights(departure_id, arrival_id, search_date, **kwargs)
+            
+            if daily_result.get('success'):
+                successful_searches += 1
+                daily_results[search_date] = {
+                    'result': daily_result,
+                    'day_name': day_name,
+                    'day_offset': day_offset
+                }
+                
+                # Extract flights from daily result
+                data = daily_result.get('data', {})
+                best_flights = data.get('best_flights', [])
+                other_flights = data.get('other_flights', [])
+                
+                # Tag flights with search date info and add to aggregated list
+                for flight in best_flights + other_flights:
+                    flight_copy = flight.copy()
+                    flight_copy['search_date'] = search_date
+                    flight_copy['day_name'] = day_name
+                    flight_copy['day_offset'] = day_offset
+                    flight_copy['is_best'] = flight in best_flights
+                    all_flights.append(flight_copy)
+                
+                daily_count = len(best_flights) + len(other_flights)
+                total_flights_found += daily_count
+                self.logger.info(f"  Found {daily_count} flights for {search_date}")
+            else:
+                daily_results[search_date] = {
+                    'result': daily_result,
+                    'day_name': day_name,
+                    'day_offset': day_offset,
+                    'error': daily_result.get('error', 'Search failed')
+                }
+                self.logger.warning(f"  Search failed for {search_date}: {daily_result.get('error')}")
+        
+        # Sort all flights by price across all dates
+        def extract_price(flight):
+            price_str = flight.get('price', '9999 USD')
+            try:
+                return float(price_str.replace(' USD', '').replace(',', ''))
+            except:
+                return 9999.0
+        
+        all_flights.sort(key=extract_price)
+        
+        # Analyze price trends
+        price_trend = self._analyze_week_price_trend(daily_results)
+        
+        # Create summary statistics
+        summary = {
+            'total_days_searched': 7,
+            'successful_searches': successful_searches,
+            'failed_searches': 7 - successful_searches,
+            'total_flights_found': total_flights_found,
+            'avg_flights_per_day': round(total_flights_found / max(successful_searches, 1), 1),
+            'date_range': f"{start_date} to {end_date}",
+            'cheapest_day': None,
+            'most_expensive_day': None
+        }
+        
+        # Find cheapest and most expensive days
+        if price_trend['daily_min_prices']:
+            min_price_day = min(price_trend['daily_min_prices'].items(), key=lambda x: x[1])
+            max_price_day = max(price_trend['daily_min_prices'].items(), key=lambda x: x[1])
+            summary['cheapest_day'] = {'date': min_price_day[0], 'price': min_price_day[1]}
+            summary['most_expensive_day'] = {'date': max_price_day[0], 'price': max_price_day[1]}
+        
+        result = {
+            'success': successful_searches > 0,
+            'source': 'week_range',
+            'date_range': f"{start_date} to {end_date}",
+            'daily_results': daily_results,
+            'best_week_flights': all_flights[:10],  # Top 10 flights across all dates
+            'all_week_flights': all_flights,
+            'price_trend': price_trend,
+            'summary': summary
+        }
+        
+        if successful_searches == 0:
+            result['error'] = 'No successful searches in the 7-day range'
+        elif successful_searches < 7:
+            result['warning'] = f'Only {successful_searches}/7 days returned results'
+        
+        self.logger.info(f"Week range search completed: {successful_searches}/7 days successful, {total_flights_found} total flights")
+        
+        return result
+    
+    def _analyze_week_price_trend(self, daily_results: Dict) -> Dict[str, Any]:
+        """Analyze price trends across the week"""
+        daily_min_prices = {}
+        daily_avg_prices = {}
+        daily_flight_counts = {}
+        weekday_analysis = {'weekday': [], 'weekend': []}
+        
+        for date_str, day_data in daily_results.items():
+            if 'error' in day_data:
+                continue
+                
+            daily_result = day_data['result']
+            day_name = day_data['day_name']
+            
+            data = daily_result.get('data', {})
+            all_day_flights = data.get('best_flights', []) + data.get('other_flights', [])
+            
+            if all_day_flights:
+                # Extract prices for this day
+                prices = []
+                for flight in all_day_flights:
+                    try:
+                        price = float(flight.get('price', '0').replace(' USD', '').replace(',', ''))
+                        if price > 0:
+                            prices.append(price)
+                    except:
+                        continue
+                
+                if prices:
+                    daily_min_prices[date_str] = min(prices)
+                    daily_avg_prices[date_str] = round(sum(prices) / len(prices), 2)
+                    daily_flight_counts[date_str] = len(all_day_flights)
+                    
+                    # Categorize by weekday vs weekend
+                    if day_name in ['Saturday', 'Sunday']:
+                        weekday_analysis['weekend'].extend(prices)
+                    else:
+                        weekday_analysis['weekday'].extend(prices)
+        
+        # Calculate weekday vs weekend trends
+        trend_analysis = {}
+        if weekday_analysis['weekday'] and weekday_analysis['weekend']:
+            weekday_avg = round(sum(weekday_analysis['weekday']) / len(weekday_analysis['weekday']), 2)
+            weekend_avg = round(sum(weekday_analysis['weekend']) / len(weekday_analysis['weekend']), 2)
+            trend_analysis = {
+                'weekday_avg_price': weekday_avg,
+                'weekend_avg_price': weekend_avg,
+                'weekend_premium': round(weekend_avg - weekday_avg, 2),
+                'weekend_premium_percent': round(((weekend_avg - weekday_avg) / weekday_avg) * 100, 1) if weekday_avg > 0 else 0
+            }
+        
+        return {
+            'daily_min_prices': daily_min_prices,
+            'daily_avg_prices': daily_avg_prices, 
+            'daily_flight_counts': daily_flight_counts,
+            'weekday_vs_weekend': trend_analysis,
+            'total_days_with_data': len(daily_min_prices)
+        }
+    
     def _validate_search_params(self, params: Dict[str, Any]) -> Tuple[bool, List[str]]:
         """Validate search parameters"""
         errors = []
