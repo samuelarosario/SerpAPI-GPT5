@@ -91,25 +91,68 @@ class FlightSearchCache:
                 if result:
                     self.logger.info(f"Cache HIT for search key: {cache_key[:12]}...")
                     
-                    # Get associated flight results with optimized schema
-                    results_query = """
-                    SELECT fr.*, fs.departure_airport_code, da.airport_name as departure_airport_name,
-                           fs.arrival_airport_code, aa.airport_name as arrival_airport_name,
-                           fs.departure_time, fs.arrival_time, fs.duration_minutes,
-                           fs.airline_code, al.airline_name
-                    FROM flight_results fr
-                    LEFT JOIN flight_segments fs ON fr.id = fs.flight_result_id
-                    LEFT JOIN airports da ON fs.departure_airport_code = da.airport_code
-                    LEFT JOIN airports aa ON fs.arrival_airport_code = aa.airport_code
-                    LEFT JOIN airlines al ON fs.airline_code = al.airline_code
-                    WHERE fr.search_id = ?
-                    ORDER BY fr.total_price ASC
-                    """
+                    # Get flight results and reconstruct API-compatible format
+                    cursor.execute("""
+                        SELECT fr.id, fr.total_price, fr.price_currency, fr.total_duration, 
+                               fr.layover_count, fr.result_type, fr.carbon_emissions_flight,
+                               fr.booking_token
+                        FROM flight_results fr
+                        WHERE fr.search_id = ?
+                        ORDER BY fr.total_price ASC
+                    """, (result['search_id'],))
                     
-                    cursor.execute(results_query, (result['search_id'],))
                     flight_results = cursor.fetchall()
                     
-                    # Format response from cached flight results
+                    # Reconstruct API-compatible response format
+                    best_flights = []
+                    other_flights = []
+                    
+                    for flight_row in flight_results:
+                        flight_id, price, currency, duration, layovers, result_type, carbon, booking_token = flight_row
+                        
+                        # Get flight segments for this flight
+                        cursor.execute("""
+                            SELECT departure_airport_code, arrival_airport_code, 
+                                   airline_code, flight_number, departure_time, 
+                                   arrival_time, duration_minutes
+                            FROM flight_segments 
+                            WHERE flight_result_id = ?
+                            ORDER BY segment_order
+                        """, (flight_id,))
+                        
+                        segments = cursor.fetchall()
+                        
+                        # Build flight object in API format
+                        flight_obj = {
+                            'price': f'{price} {currency}' if price and currency else None,
+                            'total_duration': duration,
+                            'layovers': [] if layovers == 0 else [{'duration': 'N/A'} for _ in range(layovers)],
+                            'carbon_emissions': {'this_flight': carbon} if carbon else {},
+                            'booking_token': booking_token,
+                            'flights': []
+                        }
+                        
+                        # Add flight segments
+                        for seg in segments:
+                            dep_code, arr_code, airline, flight_num, dep_time, arr_time, seg_duration = seg
+                            segment_obj = {
+                                'departure_airport': {'id': dep_code},
+                                'arrival_airport': {'id': arr_code},
+                                'airline': airline,
+                                'flight_number': flight_num,
+                                'departure_time': dep_time,
+                                'arrival_time': arr_time,
+                                'duration': seg_duration
+                            }
+                            flight_obj['flights'].append(segment_obj)
+                        
+                        # Categorize as best or other flight
+                        if result_type == 'best':
+                            best_flights.append(flight_obj)
+                        else:
+                            other_flights.append(flight_obj)
+                    
+                    # Format response in API-compatible structure
                     cached_response = {
                         'search_id': result['search_id'],
                         'search_parameters': json.loads(result['raw_parameters']) if result['raw_parameters'] else {},
@@ -117,12 +160,9 @@ class FlightSearchCache:
                         'cache_timestamp': result['created_at'],
                         'flight_results_count': result['flight_count'],
                         'processing_status': 'cached_data',
-                        'flight_results': []
+                        'best_flights': best_flights,
+                        'other_flights': other_flights
                     }
-                    
-                    # Add flight results data if available
-                    if flight_results:
-                        cached_response['flight_results'] = [dict(row) for row in flight_results]
                     
                     return cached_response
                 else:
