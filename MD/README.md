@@ -270,23 +270,12 @@ python config.py              # Test configuration
 python serpapi_client.py      # Test API client
 python flight_processor.py    # Test data processor
 python flight_analyzer.py     # Test analyzer
-python "Phase 1\\Main\\enhanced_flight_search.py" LAX JFK 12-30-2025 --no-horizon  # Phase 1 enhanced client
 python -m unittest discover -s tests -p "test_*.py" -v  # Run shared tests
 ```
 
-## 🔄 Phase 1 Refactor (In Progress)
+## 🔄 Refactor Status
 
-An isolated Phase 1 workspace (`Phase 1/`) introduces:
-- Unified validation & rate limiting (`common_validation.py`).
-- Central logging (`logging_setup.py`).
-- Standardized date parsing & horizon logic (`date_utils.py`).
-- Refactored enhanced flight search with cache + transactional persistence.
-- Numeric price normalization (stored amount + currency separately).
-
-Merge Strategy (planned):
-1. Replace duplicated validator/rate limiter in `Main/` with imports from Phase 1.
-2. Deprecate legacy monolith pieces once parity tests pass.
-3. Add CI workflow to run new test suite.
+The earlier Phase 1 sandbox has been fully merged. Shared utilities now live in `Main/core/` and the temporary `Phase 1/` directory is deprecated (safe to delete). All references to validation, logging, and date parsing are centralized.
 
 ## 📅 Standardized Date Parsing
 

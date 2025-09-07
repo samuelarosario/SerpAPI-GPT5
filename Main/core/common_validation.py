@@ -1,7 +1,4 @@
-# moved from Phase 1/Main/common_validation.py
-"""Common validation and rate limiting utilities.
-Consolidated from Phase 1 sandbox into Main/core.
-"""
+"""Common validation and rate limiting utilities."""
 from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional

@@ -1,7 +1,4 @@
-# moved from Phase 1/Main/logging_setup.py
-"""Central logging setup.
-Provides init_logging() to configure root logger with console + rotating file.
-"""
+"""Central logging setup with console + rotating file handler."""
 import logging, os
 from logging.handlers import RotatingFileHandler
 
