@@ -27,6 +27,8 @@ This system will:
 - Store ALL temporary scripts in `/Temp` directory
 - Store ALL temporary data in `/Temp` directory
 - **CRITICAL**: Clean ALL temp scripts after every successful operation
+ - **UPDATED (2025-09-08)**: All temporary, experimental, or ad-hoc test scripts MUST be placed under the `/tests` directory (no `/Temp` directory is to be used)
+ - Temporary scripts in `/tests` must be clearly named with a `temp_` or `experimental_` prefix and either converted to proper tests or removed before finalization
 - Store ALL database files and related scripts in `/DB` directory
 - Store ALL main files and scripts in `/Main` directory
 - **PROHIBITED**: Mock data is NOT allowed at any time - use real API data only
@@ -83,15 +85,15 @@ This system will:
 - Follow language-specific conventions
 - Implement proper logging
 - Write unit tests for critical functions
-- Store all temporary scripts in `/Temp` directory
-- Store all temporary data in `/Temp` directory
-- **CRITICAL**: Clean all temp scripts after every successful operation
+ - **TEMP/TEST POLICY**: All temporary or experimental scripts go in `/tests` only (no `/Temp` folder). Prefix with `temp_` and remove or promote to real tests before merge
+ - **CRITICAL**: Remove obsolete temp scripts once purpose is fulfilled
 - Store all database files and related scripts in `/DB` directory
 - Store all main files and scripts in `/Main` directory
 - **NEVER use mock data** - always use real API data
 - **CRITICAL COMMUNICATION RULE**: Do NOT create unnecessary summaries or reports unless explicitly requested by the user
 - **RESPONSE POLICY**: Keep responses concise and focused on the specific task requested
 - **NO AUTO-SUMMARIES**: Avoid generating summaries, reports, or comprehensive overviews unless the user specifically asks for them
+ - **DEPENDENCIES (CRITICAL)**: Only introduce packages that are actively maintained, widely adopted, and security-reviewed; prefer Python standard library when possible; REQUIRE user approval (double-confirm) before adding any new external dependency; pin versions in `requirements.txt` and avoid unpinned `latest` installs; remove unused or deprecated packages promptly
 
 ### Security Guidelines
 - Never expose API keys in code or configuration files
@@ -137,8 +139,7 @@ This system will:
 - Regularly backup important work
 - Follow DRY (Don't Repeat Yourself) principle
 - Implement proper code organization
-- Use `/Temp` directory for all temporary files and data
-- **CRITICAL**: Clean all temp scripts after every successful operation
+ - Place any temporary / exploratory scripts ONLY in `/tests` (prefixed `temp_`) and clean them promptly
 - Use `/DB` directory for all database files and related scripts
 - Use `/Main` directory for all main files and scripts
 - Always work with real API data, never mock data
@@ -210,4 +211,5 @@ This system will:
 
 ---
 *Last Updated: September 6, 2025*
+*Dependency Policy Updated: September 8, 2025*
 *Security Guidelines: MANDATORY COMPLIANCE REQUIRED*

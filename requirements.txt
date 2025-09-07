@@ -10,7 +10,7 @@ This is a SerpAPI integration system that collects and stores online data throug
 SerpAPI/
 ├── Main/           # Main application files and scripts
 ├── DB/             # Database files and related scripts
-├── Temp/           # Temporary scripts and data
+├── tests/          # Test suite (also hosts temp_ experimental scripts; no standalone Temp directory)
 └── agent-instructions.md
 ```
 
@@ -33,7 +33,7 @@ SerpAPI/
 ### 3. File Organization
 - **Main Files**: `/Main` directory for primary application code and scripts
 - **Database Files**: `/DB` directory for database files and related scripts
-- **Temporary Files**: `/Temp` directory for all temporary scripts and data
+- **Tests & Temp Scripts**: `/tests` directory for unit tests AND any temporary/experimental scripts (prefix with `temp_` and remove or formalize before release)
 - **Strict Separation**: Maintain clear boundaries between file types
 
 ### 4. Data Authenticity
@@ -55,6 +55,7 @@ SerpAPI/
 - Input validation for all user data
 - Proper authentication mechanisms
 - No hardcoded sensitive information
+- Approved Dependencies Only: Add new third-party packages only after owner double-confirmation; prefer standard library; pin versions; remove unused packages promptly
 
 ### Documentation
 - Clear code comments
@@ -127,5 +128,5 @@ SerpAPI/
 
 ---
 **Document Version**: 1.0  
-**Last Updated**: September 6, 2025  
+**Last Updated**: September 8, 2025  
 **Status**: Active Requirements Document

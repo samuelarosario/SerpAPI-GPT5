@@ -12,7 +12,7 @@
 - [x] **API Data Collection**: SerpAPI Google Flights integration complete
 - [x] **Raw Data Preservation**: ALL API responses stored in database
 - [x] **Local Database Storage**: SQLite with comprehensive schema
-- [x] **Directory Organization**: /Main, /DB, /Temp structure implemented
+- [x] **Directory Organization**: /Main, /DB, /tests structure implemented (legacy /Temp removed)
 - [x] **Agent Confirmation**: All actions confirmed as required
 - [x] **No Mock Data Policy**: Real API data only (simulation for testing)
 
@@ -50,10 +50,11 @@
 ### Main Application (/Main)
 - `config.py` - System configuration and API key management
 - `serpapi_client.py` - SerpAPI integration with validation and rate limiting
-- `flight_processor.py` - Data processing pipeline from API to database
+- `flight_processor.py` - Data processing pipeline (legacy, partially superseded)
+- `enhanced_flight_search.py` - Unified cache-first search & storage engine
 - `flight_analyzer.py` - Analysis and reporting tools
 - `flight_system_demo.py` - Complete system demonstration
-- `simulation_demo.py` - Testing with mock data (no API key required)
+- `simulation_demo.py` - Legacy simulation (real data strongly preferred; mock usage discouraged)
 
 ### Database Components (/DB)
 - `Main_DB.db` - SQLite database with flight data

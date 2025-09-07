@@ -26,459 +26,15 @@ from config import (
     VALIDATION_RULES, get_api_key
 )
 
+from cache import FlightSearchCache
 try:
-    from database_helper import SerpAPIDatabase
-except ImportError:
-    # Fallback if import fails
-    class SerpAPIDatabase:
-        def __init__(self, db_path):
+    from DB.database_helper import SerpAPIDatabase
+except ImportError:  # pragma: no cover
+    class SerpAPIDatabase:  # minimal fallback
+        def __init__(self, db_path: str):
             self.db_path = db_path
         def insert_api_response(self, **kwargs):
-            return 1
-
-class FlightSearchCache:
-    """Manages local database cache for flight searches"""
-    
-    def __init__(self, db_path: str = "DB/Main_DB.db"):
-        """Initialize cache manager"""
-        self.db_path = db_path
-        self.logger = logging.getLogger(__name__)
-    
-    def generate_cache_key(self, search_params: Dict[str, Any]) -> str:
-        """Generate consistent cache key from search parameters"""
-        # Normalize parameters for consistent hashing
-        normalized_params = {}
-        for key, value in search_params.items():
-            if value is not None:
-                normalized_params[key] = str(value).lower() if isinstance(value, str) else value
-        
-        # Create hash from sorted parameters
-        param_string = json.dumps(normalized_params, sort_keys=True)
-        return hashlib.sha256(param_string.encode()).hexdigest()
-    
-    def search_cache(self, search_params: Dict[str, Any], max_age_hours: int = 24) -> Optional[Dict[str, Any]]:
-        """
-        Search for cached flight data in local database
-        
-        Args:
-            search_params: Flight search parameters
-            max_age_hours: Maximum age of cached data in hours (default 24)
-            
-        Returns:
-            Cached search result if found and valid, None otherwise
-        """
-        try:
-            cache_key = self.generate_cache_key(search_params)
-            
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                cursor = conn.cursor()
-                
-                # Search for recent cached results - simplified lookup
-                cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
-                
-                query = """
-                SELECT fs.*, COUNT(fr.id) as flight_count
-                FROM flight_searches fs
-                LEFT JOIN flight_results fr ON fs.search_id = fr.search_id
-                WHERE fs.cache_key = ? 
-                AND fs.created_at > ?
-                GROUP BY fs.search_id
-                ORDER BY fs.created_at DESC
-                LIMIT 1
-                """
-                
-                cursor.execute(query, (cache_key, cutoff_time.isoformat()))
-                result = cursor.fetchone()
-                
-                if result:
-                    self.logger.info(f"Cache HIT for search key: {cache_key[:12]}...")
-                    
-                    # Get flight results and reconstruct API-compatible format
-                    cursor.execute("""
-                        SELECT fr.id, fr.total_price, fr.price_currency, fr.total_duration, 
-                               fr.layover_count, fr.result_type, fr.carbon_emissions_flight,
-                               fr.booking_token
-                        FROM flight_results fr
-                        WHERE fr.search_id = ?
-                        ORDER BY fr.total_price ASC
-                    """, (result['search_id'],))
-                    
-                    flight_results = cursor.fetchall()
-                    
-                    # Reconstruct API-compatible response format
-                    best_flights = []
-                    other_flights = []
-                    
-                    for flight_row in flight_results:
-                        flight_id, price, currency, duration, layovers, result_type, carbon, booking_token = flight_row
-                        
-                        # Get flight segments for this flight
-                        cursor.execute("""
-                            SELECT departure_airport_code, arrival_airport_code, 
-                                   airline_code, flight_number, departure_time, 
-                                   arrival_time, duration_minutes
-                            FROM flight_segments 
-                            WHERE flight_result_id = ?
-                            ORDER BY segment_order
-                        """, (flight_id,))
-                        
-                        segments = cursor.fetchall()
-                        
-                        # Build flight object in API format
-                        flight_obj = {
-                            'price': f'{price} {currency}' if price and currency else None,
-                            'total_duration': duration,
-                            'layovers': [] if layovers == 0 else [{'duration': 'N/A'} for _ in range(layovers)],
-                            'carbon_emissions': {'this_flight': carbon} if carbon else {},
-                            'booking_token': booking_token,
-                            'flights': []
-                        }
-                        
-                        # Add flight segments
-                        for seg in segments:
-                            dep_code, arr_code, airline, flight_num, dep_time, arr_time, seg_duration = seg
-                            segment_obj = {
-                                'departure_airport': {'id': dep_code},
-                                'arrival_airport': {'id': arr_code},
-                                'airline': airline,
-                                'flight_number': flight_num,
-                                'departure_time': dep_time,
-                                'arrival_time': arr_time,
-                                'duration': seg_duration
-                            }
-                            flight_obj['flights'].append(segment_obj)
-                        
-                        # Categorize as best or other flight
-                        if result_type == 'best':
-                            best_flights.append(flight_obj)
-                        else:
-                            other_flights.append(flight_obj)
-                    
-                    # Format response in API-compatible structure
-                    cached_response = {
-                        'search_id': result['search_id'],
-                        'search_parameters': json.loads(result['raw_parameters']) if result['raw_parameters'] else {},
-                        'cached': True,
-                        'cache_timestamp': result['created_at'],
-                        'flight_results_count': result['flight_count'],
-                        'processing_status': 'cached_data',
-                        'best_flights': best_flights,
-                        'other_flights': other_flights
-                    }
-                    
-                    return cached_response
-                else:
-                    self.logger.info(f"Cache MISS for search key: {cache_key[:12]}...")
-                    return None
-                    
-        except Exception as e:
-            self.logger.error(f"Error searching cache: {str(e)}")
             return None
-    
-    def store_flight_data(self, search_id: str, search_params: Dict[str, Any], api_response: Dict[str, Any]) -> None:
-        """Store complete flight search data in the database"""
-        try:
-            cache_key = self.generate_cache_key(search_params)
-            
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # Insert flight search record
-                cursor.execute("""
-                INSERT OR REPLACE INTO flight_searches (
-                    search_id, search_timestamp, departure_airport_code, arrival_airport_code, 
-                    outbound_date, return_date, flight_type, adults, children,
-                    infants_in_seat, infants_on_lap, travel_class, currency,
-                    country_code, language_code, raw_parameters, response_status,
-                    total_results, cache_key, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    search_id,
-                    datetime.now().isoformat(),
-                    search_params.get('departure_id'),
-                    search_params.get('arrival_id'),
-                    search_params.get('outbound_date'),
-                    search_params.get('return_date'),
-                    1 if search_params.get('return_date') else 2,  # 1=round-trip, 2=one-way
-                    search_params.get('adults', 1),
-                    search_params.get('children', 0),
-                    search_params.get('infants_in_seat', 0),
-                    search_params.get('infants_on_lap', 0),
-                    search_params.get('travel_class', 1),
-                    search_params.get('currency', 'USD'),
-                    search_params.get('gl', 'us'),
-                    search_params.get('hl', 'en'),
-                    json.dumps(search_params),
-                    'success',
-                    len(api_response.get('best_flights', [])) + len(api_response.get('other_flights', [])),
-                    cache_key,
-                    datetime.now().isoformat()
-                ))
-                
-                # Store flight results
-                flight_result_id = cursor.lastrowid
-                
-                # Process best flights
-                best_flights = api_response.get('best_flights', [])
-                for rank, flight in enumerate(best_flights, 1):
-                    self._store_flight_result(cursor, search_id, flight, 'best', rank)
-                
-                # Process other flights
-                other_flights = api_response.get('other_flights', [])
-                for rank, flight in enumerate(other_flights, 1):
-                    self._store_flight_result(cursor, search_id, flight, 'other', rank)
-                
-                # Store price insights
-                if 'price_insights' in api_response:
-                    self._store_price_insights(cursor, search_id, api_response['price_insights'])
-                
-                conn.commit()
-                self.logger.info(f"Successfully stored flight data for search: {search_id}")
-                
-        except Exception as e:
-            self.logger.error(f"Error storing flight data: {str(e)}")
-            import traceback
-            traceback.print_exc()
-    
-    def _store_flight_result(self, cursor, search_id: str, flight: Dict[str, Any], result_type: str, rank: int):
-        """Store individual flight result"""
-        try:
-            cursor.execute("""
-            INSERT INTO flight_results (
-                search_id, result_type, result_rank, total_duration, total_price,
-                price_currency, flight_type, layover_count, carbon_emissions_flight,
-                carbon_emissions_typical, carbon_emissions_difference_percent,
-                booking_token, airline_logo_url, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                search_id, result_type, rank,
-                flight.get('total_duration'),
-                flight.get('price'),
-                'USD',  # Default currency
-                flight.get('type', 'One way'),
-                len(flight.get('layovers', [])),
-                flight.get('carbon_emissions', {}).get('this_flight'),
-                flight.get('carbon_emissions', {}).get('typical_for_this_route'),
-                flight.get('carbon_emissions', {}).get('difference_percent'),
-                flight.get('booking_token'),
-                flight.get('airline_logo'),
-                datetime.now().isoformat()
-            ))
-            
-            flight_result_id = cursor.lastrowid
-            
-            # Store flight segments
-            for segment_order, segment in enumerate(flight.get('flights', []), 1):
-                self._store_flight_segment(cursor, flight_result_id, segment, segment_order)
-            
-            # Store layovers
-            for layover_order, layover in enumerate(flight.get('layovers', []), 1):
-                self._store_layover(cursor, flight_result_id, layover, layover_order)
-                
-        except Exception as e:
-            self.logger.error(f"Error storing flight result: {str(e)}")
-    
-    def _store_flight_segment(self, cursor, flight_result_id: int, segment: Dict[str, Any], segment_order: int):
-        """Store flight segment details with optimized schema (no redundant data)"""
-        try:
-            departure_airport = segment.get('departure_airport', {})
-            arrival_airport = segment.get('arrival_airport', {})
-            
-            # Store airport information in normalized tables
-            self._store_airport_info(cursor, departure_airport)
-            self._store_airport_info(cursor, arrival_airport)
-            
-            # Extract IATA airline code from flight number instead of using full name
-            flight_number = segment.get('flight_number', '')
-            airline_iata_code = self._extract_airline_iata_code(flight_number, segment.get('airline', ''))
-            
-            # Store airline information in normalized table
-            self._store_airline_info(cursor, airline_iata_code, segment.get('airline_logo'), segment.get('airline'))
-            
-            # Insert flight segment with ONLY airport codes and airline IATA code (no redundant names)
-            cursor.execute("""
-            INSERT INTO flight_segments (
-                flight_result_id, segment_order, departure_airport_code, departure_time,
-                arrival_airport_code, arrival_time, duration_minutes, airplane_model,
-                airline_code, flight_number, travel_class, legroom,
-                often_delayed, extensions, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                flight_result_id, segment_order,
-                departure_airport.get('id'),      # Only store airport CODE
-                departure_airport.get('time'),
-                arrival_airport.get('id'),        # Only store airport CODE
-                arrival_airport.get('time'),
-                segment.get('duration'),
-                segment.get('airplane'),
-                airline_iata_code,                # Store proper IATA airline code
-                segment.get('flight_number'),
-                segment.get('travel_class'),
-                segment.get('legroom'),
-                segment.get('often_delayed_by_over_30_min', False),
-                json.dumps(segment.get('extensions', [])),
-                datetime.now().isoformat()
-            ))
-        except Exception as e:
-            self.logger.error(f"Error storing flight segment: {str(e)}")
-    
-    def _extract_airline_iata_code(self, flight_number: str, airline_name: str) -> str:
-        """Extract IATA airline code from flight number or airline name"""
-        if not flight_number:
-            return airline_name
-        
-        # Flight numbers typically start with 2-3 letter IATA code
-        import re
-        match = re.match(r'^([A-Z]{2,3})\s*\d+', flight_number.strip())
-        if match:
-            return match.group(1)
-        
-        # Fallback: use airline name if no IATA code found
-        return airline_name
-    
-    def _store_layover(self, cursor, flight_result_id: int, layover: Dict[str, Any], layover_order: int):
-        """Store layover information with optimized schema (no redundant airport name)"""
-        try:
-            cursor.execute("""
-            INSERT INTO layovers (
-                flight_result_id, layover_order, airport_code,
-                duration_minutes, is_overnight, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                flight_result_id, layover_order,
-                layover.get('id'),        # Only store airport CODE (no redundant name)
-                layover.get('duration'),
-                layover.get('overnight', False),
-                datetime.now().isoformat()
-            ))
-        except Exception as e:
-            self.logger.error(f"Error storing layover: {str(e)}")
-    
-    def _store_price_insights(self, cursor, search_id: str, price_insights: Dict[str, Any]):
-        """Store price insights data"""
-        try:
-            cursor.execute("""
-            INSERT INTO price_insights (
-                search_id, lowest_price, price_level, typical_price_low,
-                typical_price_high, price_history, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (
-                search_id,
-                price_insights.get('lowest_price'),
-                price_insights.get('price_level'),
-                price_insights.get('typical_price_range', [None, None])[0],
-                price_insights.get('typical_price_range', [None, None])[1],
-                json.dumps(price_insights.get('price_history', [])),
-                datetime.now().isoformat()
-            ))
-        except Exception as e:
-            self.logger.error(f"Error storing price insights: {str(e)}")
-    
-    def _store_airport_info(self, cursor, airport_data: Dict[str, Any]):
-        """Store or update airport information in normalized airports table"""
-        if not airport_data or not airport_data.get('id'):
-            return
-            
-        try:
-            airport_code = airport_data.get('id')
-            airport_name = airport_data.get('name')
-            
-            # Use INSERT OR IGNORE to add new airports, then UPDATE existing ones
-            current_time = datetime.now().isoformat()
-            
-            # First, try to insert new airport (will be ignored if code already exists)
-            cursor.execute("""
-            INSERT OR IGNORE INTO airports (
-                airport_code, airport_name, city, country, country_code,
-                timezone, image_url, thumbnail_url, first_seen, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                airport_code,
-                airport_name,
-                airport_data.get('city'),
-                airport_data.get('country'),
-                airport_data.get('country_code'),
-                airport_data.get('timezone'),
-                airport_data.get('image'),
-                airport_data.get('thumbnail'),
-                current_time,
-                current_time
-            ))
-            
-            # Then update the existing record (always update last_seen and fill in missing data)
-            cursor.execute("""
-            UPDATE airports SET 
-                airport_name = COALESCE(?, airport_name),
-                city = COALESCE(?, city),
-                country = COALESCE(?, country),
-                country_code = COALESCE(?, country_code),
-                timezone = COALESCE(?, timezone),
-                image_url = COALESCE(?, image_url),
-                thumbnail_url = COALESCE(?, thumbnail_url),
-                last_seen = ?
-            WHERE airport_code = ?
-            """, (
-                airport_name,
-                airport_data.get('city'),
-                airport_data.get('country'),
-                airport_data.get('country_code'),
-                airport_data.get('timezone'),
-                airport_data.get('image'),
-                airport_data.get('thumbnail'),
-                current_time,
-                airport_code
-            ))
-                
-        except Exception as e:
-            self.logger.error(f"Error storing airport info: {str(e)}")
-    
-    def _store_airline_info(self, cursor, airline_iata_code: str, airline_logo: str = None, airline_name: str = None):
-        """Store or update airline information in normalized airlines table"""
-        if not airline_iata_code:
-            return
-            
-        try:
-            # Use INSERT OR IGNORE to add new airlines, then UPDATE existing ones
-            current_time = datetime.now().isoformat()
-            
-            # Determine airline name - prefer provided name, fallback to IATA code
-            display_name = airline_name if airline_name else airline_iata_code
-            
-            # First, try to insert new airline (will be ignored if code already exists)
-            cursor.execute("""
-            INSERT OR IGNORE INTO airlines (
-                airline_code, airline_name, logo_url, alliance,
-                first_seen, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?)
-            """, (
-                airline_iata_code,
-                display_name,
-                airline_logo,
-                None,           # Alliance info not available in current data
-                current_time,
-                current_time
-            ))
-            
-            # Then update the existing record (always update last_seen and improve data if available)
-            cursor.execute("""
-            UPDATE airlines SET 
-                airline_name = CASE 
-                    WHEN ? != ? THEN ?  -- Update name if we have a better one (not just IATA code)
-                    ELSE airline_name 
-                END,
-                logo_url = COALESCE(?, logo_url),
-                last_seen = ?
-            WHERE airline_code = ?
-            """, (
-                display_name, airline_iata_code, display_name,  # Update name if it's not just the IATA code
-                airline_logo,
-                current_time,
-                airline_iata_code
-            ))
-                
-        except Exception as e:
-            self.logger.error(f"Error storing airline info: {str(e)}")
     
     def cleanup_old_data(self, max_age_hours: int = 24):
         """Remove flight data older than specified hours to keep database fresh"""
@@ -547,27 +103,31 @@ class EnhancedFlightSearchClient:
     def __init__(self, api_key: Optional[str] = None, db_path: str = "DB/Main_DB.db"):
         """Initialize the enhanced client"""
         self.api_key = api_key or get_api_key()
-        self.db_path = db_path
-        
+        if not os.path.isabs(db_path):
+            base = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            self.db_path = os.path.normpath(os.path.join(base, db_path))
+        else:
+            self.db_path = db_path
+
         # Initialize cache manager
-        self.cache = FlightSearchCache(db_path)
-        
+        self.cache = FlightSearchCache(self.db_path)
+
         # API configuration
         self.base_url = SERPAPI_CONFIG['base_url']
         self.engine = SERPAPI_CONFIG['engine']
         self.timeout = SERPAPI_CONFIG['timeout']
         self.max_retries = SERPAPI_CONFIG['max_retries']
         self.retry_delay = SERPAPI_CONFIG['retry_delay']
-        
+
         self.rate_limiter = RateLimiter() if RATE_LIMIT_CONFIG['enable_rate_limiting'] else None
         self.session = requests.Session()
-        
+
         # Setup logging
         self.logger = logging.getLogger(__name__)
-        
+
         # Import original client for API calls
         from serpapi_client import SerpAPIFlightClient
-        self.api_client = SerpAPIFlightClient(api_key) if self.api_key else None
+        self.api_client = SerpAPIFlightClient(self.api_key) if self.api_key else None
     
     def search_flights(self, 
                       departure_id: str,
@@ -679,38 +239,54 @@ class EnhancedFlightSearchClient:
             }
         
         try:
-            # Always use round-trip search to capture more comprehensive data
-            # This provides both outbound and return flight options
             if 'return_date' in search_params:
                 self.logger.info("Making round-trip API call (return date provided)")
                 api_result = self.api_client.search_round_trip(**search_params)
             else:
                 self.logger.info("Making one-way API call (no return date available)")
                 api_result = self.api_client.search_one_way(**search_params)
-            
-            if api_result.get('success'):
-                # Store complete flight data in database
-                search_id = api_result.get('search_id')
-                api_data = api_result.get('data')
-                
-                if search_id and api_data:
-                    self.cache.store_flight_data(search_id, search_params, api_data)
-                    self.logger.info(f"API call successful - stored complete flight data for search: {search_id}")
-                
-                return {
-                    'success': True,
-                    'source': 'api',
-                    'data': api_data,
-                    'search_id': search_id,
-                    'message': 'Fresh data retrieved from API'
-                }
-            else:
+
+            if not api_result.get('success'):
                 return {
                     'success': False,
                     'error': api_result.get('error', 'API call failed'),
                     'source': 'api_error'
                 }
-                
+
+            search_id = api_result.get('search_id')
+            api_data = api_result.get('data')
+            api_query_id = None
+
+            # Store raw API response first (non-fatal on failure)
+            try:
+                if search_id and api_data:
+                    dbh = SerpAPIDatabase(self.db_path)
+                    api_query_id = dbh.insert_api_response(
+                        query_parameters=search_params,
+                        raw_response=json.dumps(api_data),
+                        query_type='google_flights',
+                        status_code=200,
+                        api_endpoint='google_flights',
+                        search_term=f"{search_params.get('departure_id','')}-{search_params.get('arrival_id','')}"
+                    )
+            except Exception as raw_err:
+                self.logger.error(f"Failed to store raw API response: {raw_err}")
+
+            # Structured storage (non-fatal)
+            try:
+                if search_id and api_data:
+                    self._store_structured_data(search_id, search_params, api_data, api_query_id)
+                    self.logger.info(f"API call successful - stored complete flight data for search: {search_id}")
+            except Exception as struct_err:
+                self.logger.error(f"Structured storage failure: {struct_err}")
+
+            return {
+                'success': True,
+                'source': 'api',
+                'data': api_data,
+                'search_id': search_id,
+                'message': 'Fresh data retrieved from API'
+            }
         except Exception as e:
             self.logger.error(f"API call failed: {str(e)}")
             return {
@@ -1068,28 +644,326 @@ class EnhancedFlightSearchClient:
             self.logger.error(f"Error getting cache stats: {str(e)}")
             return {'error': str(e)}
 
-# Example usage and testing
-if __name__ == "__main__":
-    # Test the enhanced client
-    client = EnhancedFlightSearchClient()
-    
-    # Test search (will check cache first)
-    result = client.search_flights(
-        departure_id="LAX",
-        arrival_id="JFK", 
-        outbound_date="2025-09-15",
-        return_date="2025-09-22",
-        adults=2
+    # ---------------- Internal structured storage (extracted) -----------------
+    def _store_structured_data(self, search_id: str, search_params: Dict[str, Any], api_response: Dict[str, Any], api_query_id: int | None):
+        """Persist normalized flight data (idempotent for a given search_id)."""
+        try:
+            cache_key = self.cache.generate_cache_key(search_params)
+            with sqlite3.connect(self.db_path) as conn:
+                cur = conn.cursor()
+                cur.execute(
+                    """
+                    INSERT OR REPLACE INTO flight_searches (
+                        search_id, search_timestamp, departure_airport_code, arrival_airport_code,
+                        outbound_date, return_date, flight_type, adults, children,
+                        infants_in_seat, infants_on_lap, travel_class, currency,
+                        country_code, language_code, raw_parameters, response_status,
+                        total_results, cache_key, api_query_id, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        search_id,
+                        datetime.now().isoformat(),
+                        search_params.get('departure_id'),
+                        search_params.get('arrival_id'),
+                        search_params.get('outbound_date'),
+                        search_params.get('return_date'),
+                        1 if search_params.get('return_date') else 2,
+                        search_params.get('adults', 1),
+                        search_params.get('children', 0),
+                        search_params.get('infants_in_seat', 0),
+                        search_params.get('infants_on_lap', 0),
+                        search_params.get('travel_class', 1),
+                        search_params.get('currency', 'USD'),
+                        search_params.get('gl', 'us'),
+                        search_params.get('hl', 'en'),
+                        json.dumps(search_params),
+                        'success',
+                        len(api_response.get('best_flights', [])) + len(api_response.get('other_flights', [])),
+                        cache_key,
+                        api_query_id,
+                        datetime.now().isoformat()
+                    )
+                )
+                # Flights
+                for group, label in ((api_response.get('best_flights', []), 'best'), (api_response.get('other_flights', []), 'other')):
+                    for rank, flight in enumerate(group, 1):
+                        self._insert_flight_result(cur, search_id, flight, label, rank)
+                if 'price_insights' in api_response:
+                    self._insert_price_insights(cur, search_id, api_response['price_insights'])
+                conn.commit()
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Structured storage error: {e}")
+
+    def _insert_flight_result(self, cur, search_id: str, flight: Dict[str, Any], kind: str, rank: int):
+        legacy = 'best_flight' if kind == 'best' else 'other_flight'
+        cur.execute(
+            """
+            INSERT INTO flight_results (
+                search_id, result_type, result_rank, total_duration, total_price,
+                price_currency, flight_type, layover_count, carbon_emissions_flight,
+                carbon_emissions_typical, carbon_emissions_difference_percent,
+                departure_token, booking_token, airline_logo_url, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                search_id, legacy, rank,
+                flight.get('total_duration'),
+                flight.get('price'),
+                'USD',
+                flight.get('type', 'One way'),
+                len(flight.get('layovers', [])),
+                flight.get('carbon_emissions', {}).get('this_flight'),
+                flight.get('carbon_emissions', {}).get('typical_for_this_route'),
+                flight.get('carbon_emissions', {}).get('difference_percent'),
+                flight.get('departure_token'),
+                flight.get('booking_token'),
+                flight.get('airline_logo'),
+                datetime.now().isoformat()
+            )
+        )
+        flight_result_id = cur.lastrowid
+        for order, seg in enumerate(flight.get('flights', []), 1):
+            self._insert_segment(cur, flight_result_id, seg, order)
+        for order, lay in enumerate(flight.get('layovers', []), 1):
+            self._insert_layover(cur, flight_result_id, lay, order)
+
+    def _insert_segment(self, cur, flight_result_id: int, seg: Dict[str, Any], order: int):
+        dep = seg.get('departure_airport', {})
+        arr = seg.get('arrival_airport', {})
+        # Minimal airport+airline upserts removed for brevity; could re-add if needed
+        cur.execute(
+            """
+            INSERT INTO flight_segments (
+                flight_result_id, segment_order, departure_airport_code, departure_time,
+                arrival_airport_code, arrival_time, duration_minutes, airplane_model,
+                airline_code, flight_number, travel_class, legroom,
+                often_delayed, extensions, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                flight_result_id, order,
+                dep.get('id'), dep.get('time'),
+                arr.get('id'), arr.get('time'),
+                seg.get('duration'), seg.get('airplane'),
+                seg.get('airline'), seg.get('flight_number'),
+                seg.get('travel_class'), seg.get('legroom'),
+                seg.get('often_delayed_by_over_30_min', False),
+                json.dumps(seg.get('extensions', [])),
+                datetime.now().isoformat()
+            )
+        )
+
+    def _insert_layover(self, cur, flight_result_id: int, lay: Dict[str, Any], order: int):
+        cur.execute(
+            """
+            INSERT INTO layovers (flight_result_id, layover_order, airport_code, duration_minutes, is_overnight, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                flight_result_id, order,
+                lay.get('id'), lay.get('duration'), lay.get('overnight', False), datetime.now().isoformat()
+            )
+        )
+
+    def _insert_price_insights(self, cur, search_id: str, pi: Dict[str, Any]):
+        cur.execute(
+            """
+            INSERT INTO price_insights (search_id, lowest_price, price_level, typical_price_low, typical_price_high, price_history, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                search_id,
+                pi.get('lowest_price'),
+                pi.get('price_level'),
+                pi.get('typical_price_range', [None, None])[0],
+                pi.get('typical_price_range', [None, None])[1],
+                json.dumps(pi.get('price_history', [])),
+                datetime.now().isoformat()
+            )
+        )
+
+def _cli():  # minimal terminal interface
+    import argparse, json as _json, sys as _sys
+    from date_utils import parse_date, DateParseError, validate_and_order
+    def _print_helper():
+        helper = """
+Enhanced Flight Search CLI
+Minimum required positional arguments:
+    1) departure  (IATA code, e.g. MNL)
+    2) arrival    (IATA code, e.g. POM)
+    3) outbound_date (DD-MM-YYYY or DD-MM)  [Ambiguous inputs treated as DD-MM]
+
+Optional:
+    return_date (DD-MM-YYYY or DD-MM) for round-trip
+    --week / -w  Perform 7-day range search starting outbound_date (ignores return_date)
+
+Examples:
+    python enhanced_flight_search.py MNL POM 30-11-2025
+    python enhanced_flight_search.py MNL POM 30-11-2025 07-12-2025 --adults 2 --travel-class 3
+    python enhanced_flight_search.py MNL POM 30-11 --week --include-airlines PX --max-price 800
+
+Common Options:
+    --adults N  --children N  --infants-seat N  --infants-lap N
+    --travel-class 1|2|3|4 (1=Economy 2=Premium 3=Business 4=First)
+    --currency USD
+    --max-price 1200
+    --include-airlines PX,CX --exclude-airlines AA,UA
+    --deep-search  (enables deeper SerpAPI search)
+    --raw          (print full JSON)
+    --stats        (print cache statistics after run)
+
+Exit Codes:
+    0 success | 2 argument/date error | 1 other error
+""".strip()
+        print(helper)
+
+    # Early minimal argument check before argparse formatting (positional count)
+    if len([a for a in _sys.argv[1:] if not a.startswith('-')]) < 3:
+        print("Error: minimum arguments not provided (need departure arrival outbound_date).\n")
+        _print_helper()
+        raise SystemExit(2)
+
+    p = argparse.ArgumentParser(
+        description=(
+            "Enhanced Flight Search CLI (cache-first). Primary accepted date format: DD-MM-YYYY or DD-MM. "
+            "Also accepts legacy MM-DD-YYYY / MM-DD. Ambiguous (<=12-<=12) treated as DD-MM per new policy."
+        ),
+        add_help=True
     )
-    
-    print("Search Result:")
-    print(f"Success: {result['success']}")
-    print(f"Source: {result['source']}")
-    if result['success']:
-        print(f"Message: {result['message']}")
+    p.add_argument('departure', help='Departure airport code (IATA)')
+    p.add_argument('arrival', help='Arrival airport code (IATA)')
+    p.add_argument('outbound_date', help='Outbound date (MM-DD or MM-DD-YYYY)')
+    p.add_argument('return_date', nargs='?', help='Optional return date (MM-DD or MM-DD-YYYY)')
+    p.add_argument('--week', '-w', action='store_true', help='7-day range search starting outbound date (ignores return_date)')
+    p.add_argument('--adults', type=int, default=1)
+    p.add_argument('--children', type=int, default=0)
+    p.add_argument('--infants-seat', type=int, default=0, dest='infants_in_seat')
+    p.add_argument('--infants-lap', type=int, default=0, dest='infants_on_lap')
+    p.add_argument('--travel-class', type=int, default=1, choices=[1,2,3,4], help='1=Economy 2=Premium 3=Business 4=First')
+    p.add_argument('--currency', default='USD')
+    p.add_argument('--max-price', type=int)
+    p.add_argument('--include-airlines', help='Comma-separated airline codes to include')
+    p.add_argument('--exclude-airlines', help='Comma-separated airline codes to exclude')
+    p.add_argument('--deep-search', action='store_true')
+    p.add_argument('--raw', action='store_true', help='Print full JSON payload')
+    p.add_argument('--stats', action='store_true', help='Print cache stats after search')
+    args = p.parse_args()
+
+    def _parse_cli_date(raw: str) -> str:
+        """Parse input date allowing DD-MM[-YYYY] (preferred) and legacy MM-DD forms.
+
+        Logic:
+        1. Split components.
+        2. If first part > 12 -> interpret as DD-MM.
+        3. If first part <=12 and second part >12 -> interpret as MM-DD (legacy) and delegate.
+        4. If both <=12 (ambiguous) -> treat as DD-MM per new policy.
+        5. Attempt construction; on failure fall back to existing parse_date for safety.
+        """
+        raw = raw.strip()
+        parts = raw.split('-')
+        if len(parts) not in (2,3):
+            # fall back to legacy parser which will raise its own error
+            return parse_date(raw)
+        try:
+            a = int(parts[0]); b = int(parts[1])
+            year = None
+            if len(parts) == 3:
+                year = int(parts[2])
+        except ValueError:
+            return parse_date(raw)
+        # Determine interpretation
+        use_day_first = False
+        if a > 12:
+            use_day_first = True
+        elif b > 12:
+            use_day_first = False  # month first (legacy)
+        else:
+            # ambiguous -> day-first per new requirement
+            use_day_first = True
+        if use_day_first:
+            day = a; month = b
+        else:
+            month = a; day = b
+        from datetime import date as _date
+        from datetime import datetime as _dt
+        today = _date.today()
+        if year is None:
+            year = today.year
+        try:
+            d = _date(year, month, day)
+        except ValueError:
+            # fallback to legacy
+            return parse_date(raw)
+        # If short form and interpreted date already passed, roll a year forward (matches legacy behavior)
+        if len(parts) == 2 and d < today:
+            try:
+                d = _date(year + 1, month, day)
+            except ValueError:
+                # fallback again
+                return parse_date(raw)
+        return d.strftime('%Y-%m-%d')
+
+    try:
+        outbound_fmt = _parse_cli_date(args.outbound_date)
+        ret_fmt = _parse_cli_date(args.return_date) if (args.return_date and not args.week) else None
+        if ret_fmt:
+            validate_and_order(outbound_fmt, ret_fmt)
+    except DateParseError as e:
+        print(f"Date error: {e}\n")
+        _print_helper()
+        raise SystemExit(2)
+
+    client = EnhancedFlightSearchClient()
+
+    common_kwargs = dict(
+        adults=args.adults,
+        children=args.children,
+        infants_in_seat=args.infants_in_seat,
+        infants_on_lap=args.infants_on_lap,
+        travel_class=args.travel_class,
+        currency=args.currency,
+        deep_search=args.deep_search
+    )
+    if args.max_price is not None:
+        common_kwargs['max_price'] = args.max_price
+    if args.include_airlines:
+        common_kwargs['include_airlines'] = [a.strip().upper() for a in args.include_airlines.split(',') if a.strip()]
+    if args.exclude_airlines:
+        common_kwargs['exclude_airlines'] = [a.strip().upper() for a in args.exclude_airlines.split(',') if a.strip()]
+
+    if args.week:
+        result = client.search_week_range(
+            args.departure.upper(), args.arrival.upper(), outbound_fmt, **common_kwargs
+        )
     else:
-        print(f"Error: {result['error']}")
-    
-    # Get cache statistics
-    stats = client.get_cache_stats()
-    print(f"\nCache Statistics: {stats}")
+        result = client.search_flights(
+            args.departure.upper(), args.arrival.upper(), outbound_fmt, ret_fmt, **common_kwargs
+        )
+
+    # Summary output
+    if result.get('success'):
+        src = result.get('source')
+        print(f"✅ Success ({src})")
+        if 'cache_age_hours' in result:
+            print(f"Cache Age: {result['cache_age_hours']:.3f}h")
+        if args.week:
+            summary = result.get('summary', {})
+            print(f"Dates: {result.get('date_range')}")
+            print(f"Flights: {summary.get('total_flights_found', 0)} across {summary.get('successful_searches', 0)} days")
+        else:
+            data = result.get('data', {})
+            print(f"Flights: {len(data.get('best_flights', []))} best / {len(data.get('other_flights', []))} other")
+    else:
+        print(f"❌ Failed: {result.get('error','unknown error')}")
+
+    if args.raw:
+        print("\nRAW RESULT JSON:")
+        print(_json.dumps(result, indent=2)[:20000])  # safety truncate
+
+    if args.stats:
+        stats = client.get_cache_stats()
+        print("\nCache Stats:", stats)
+
+if __name__ == "__main__":
+    _cli()

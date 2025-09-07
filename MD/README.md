@@ -26,8 +26,7 @@ SerpAPI/
 │   ├── database_helper.py          # Database utilities
 │   ├── enhanced_schema.sql         # Database schema
 │   └── schema_upgrade.py           # Database migration script
-├── Temp/                           # Temporary files and data
-│   └── api_key.txt                 # SerpAPI key storage
+├── tests/                          # Test suite (also hosts any temp_ experimental scripts)
 ├── agent-instructions.md           # Agent guidelines
 └── requirements.txt                # Project requirements
 ```
@@ -106,7 +105,26 @@ result = client.search_round_trip(
 )
 ```
 
-### 2. Data Processor (`flight_processor.py`)
+### 2. Enhanced Flight Search (Unified Engine)
+
+Core runtime flight search functionality is now provided by `Main/enhanced_flight_search.py` (EnhancedFlightSearchClient) which supersedes older standalone scripts (removed). It provides:
+- Cache-first (24h) lookups
+- Raw API response persistence prior to structured parsing
+- Structured multi-table ingestion (searches, results, segments, layovers, price insights)
+- Week-range (7-day) search aggregation & price trend analysis
+- Result type normalization and deterministic cache keying
+
+Example:
+```python
+from Main.enhanced_flight_search import EnhancedFlightSearchClient
+
+efs = EnhancedFlightSearchClient()
+res = efs.search_flights('LAX','JFK','2025-09-15','2025-09-22')
+if res.get('success'):
+    print('Flights:', len(res.get('data', {}).get('best_flights', [])))
+```
+
+### 3. Data Processor (`flight_processor.py`)
 
 Features:
 - ✅ Processes complete SerpAPI responses
@@ -121,7 +139,7 @@ Features:
 4. Extract airport and airline information
 5. Store price insights and analytics
 
-### 3. Data Analyzer (`flight_analyzer.py`)
+### 4. Data Analyzer (`flight_analyzer.py`)
 
 Features:
 - ✅ Route analysis and price trends
@@ -214,24 +232,13 @@ report = analyzer.generate_report()
 
 ## 📝 Usage Examples
 
-### Basic Flight Search
+### Basic Flight Search (Current Engine)
 ```python
-from flight_system_demo import FlightDataSystem
+from Main.enhanced_flight_search import EnhancedFlightSearchClient
 
-system = FlightDataSystem()
-
-# Search and analyze flights
-result = system.search_and_store_flights(
-    departure_id='LAX',
-    arrival_id='JFK', 
-    outbound_date='2025-09-15',
-    return_date='2025-09-22',
-    adults=2,
-    travel_class=3  # Business (default)
-)
-
-# Analyze route
-analysis = system.analyze_route('LAX', 'JFK')
+client = EnhancedFlightSearchClient()
+result = client.search_flights('LAX','JFK','2025-09-15','2025-09-22')
+print(result.get('source'), result.get('success'))
 ```
 
 ### Advanced Analysis
@@ -253,10 +260,7 @@ print(report)
 ## 🧪 Testing
 
 ### Simulation Mode
-For testing without API key:
-```bash
-python simulation_demo.py
-```
+Temporary or experimental test scripts must reside in `tests/` and be prefixed with `temp_`.
 
 ### Live API Testing
 With valid SerpAPI key:
@@ -329,7 +333,7 @@ Utilities:
 **1. API Key Errors**
 ```
 Error: SerpAPI key not found
-Solution: Set SERPAPI_KEY environment variable or update Temp/api_key.txt
+Solution: Set SERPAPI_KEY environment variable (no local key file supported)
 ```
 
 **2. Database Errors**
@@ -349,7 +353,7 @@ Enable detailed logging in `config.py`:
 ```python
 LOGGING_CONFIG = {
     'level': 'DEBUG',
-    'file_path': '../Temp/debug.log'
+    'file_path': '../logs/debug.log'
 }
 ```
 

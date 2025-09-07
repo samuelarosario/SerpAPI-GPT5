@@ -25,10 +25,11 @@ class SerpAPIFlightClient:
     """SerpAPI Google Flights API Client"""
     
     def __init__(self, api_key: Optional[str] = None):
-        """Initialize the client"""
+        """Initialize the client (API key must come from environment variable)."""
         self.api_key = api_key or get_api_key()
         if not self.api_key:
-            raise ValueError("SerpAPI key not found. Set SERPAPI_KEY environment variable or place in ../Temp/api_key.txt")
+            # Security: do NOT suggest plaintext file storage per agent instructions
+            raise ValueError("SerpAPI key not found. Set SERPAPI_KEY environment variable (no plaintext storage).")
         
         self.base_url = SERPAPI_CONFIG['base_url']
         self.engine = SERPAPI_CONFIG['engine']
@@ -133,8 +134,9 @@ class SerpAPIFlightClient:
         
         for attempt in range(self.max_retries + 1):
             try:
-                self.logger.info(f"Making API request (attempt {attempt + 1})")
-                
+                # Mask API key in logs
+                safe_url = url.replace(self.api_key, '***') if self.api_key else url
+                self.logger.info(f"Making API request (attempt {attempt + 1}) -> {safe_url}")
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 
