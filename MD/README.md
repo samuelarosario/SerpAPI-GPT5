@@ -17,10 +17,9 @@ SerpAPI/
 ├── Main/                           # Main application code
 │   ├── config.py                   # Configuration settings
 │   ├── serpapi_client.py           # SerpAPI client implementation
-│   ├── flight_processor.py         # Data processing pipeline
-│   ├── flight_analyzer.py          # Analysis and reporting tools
-│   ├── flight_system_demo.py       # Complete system demonstration
-│   └── simulation_demo.py          # Demo with mock data
+│   ├── flight_processor.py         # (Legacy) older processing utilities (superseded by enhanced client)
+│   ├── enhanced_flight_search.py   # Unified cache-first search + storage engine (CLI capable)
+│   └── core/                       # Shared validation & logging utilities
 ├── DB/                             # Database files and scripts
 │   ├── Main_DB.db                  # SQLite database
 │   ├── database_helper.py          # Database utilities
@@ -139,29 +138,17 @@ Features:
 4. Extract airport and airline information
 5. Store price insights and analytics
 
-### 4. Data Analyzer (`flight_analyzer.py`)
+### 4. Enhanced Flight Search CLI
 
-Features:
-- ✅ Route analysis and price trends
-- ✅ Airline performance metrics
-- ✅ Search pattern analysis
-- ✅ Comprehensive reporting
-
-**Analysis Capabilities:**
-```python
-from flight_analyzer import FlightAnalyzer
-
-analyzer = FlightAnalyzer()
-
-# Get route insights
-route_analysis = analyzer.get_route_insights('LAX-JFK')
-
-# Analyze prices
-price_analysis = analyzer.get_price_analysis('LAX', 'JFK')
-
-# Generate report
-report = analyzer.generate_report()
+You can invoke the unified engine directly from the terminal:
+```powershell
+python Main/enhanced_flight_search.py MNL POM 30-11-2025
+python Main/enhanced_flight_search.py MNL POM 30-11-2025 07-12-2025 --adults 2 --travel-class 3
+python Main/enhanced_flight_search.py MNL POM 30-11 --week --include-airlines PX --max-price 800
 ```
+
+Primary date preference: DD-MM-YYYY (or DD-MM). Ambiguous (both parts <=12) interpreted as DD-MM.
+Use `--help` or provide incomplete arguments to display the embedded helper.
 
 ## 🗄️ Database Schema
 
@@ -232,7 +219,7 @@ report = analyzer.generate_report()
 
 ## 📝 Usage Examples
 
-### Basic Flight Search (Current Engine)
+### Basic Flight Search (Programmatic)
 ```python
 from Main.enhanced_flight_search import EnhancedFlightSearchClient
 
@@ -241,20 +228,13 @@ result = client.search_flights('LAX','JFK','2025-09-15','2025-09-22')
 print(result.get('source'), result.get('success'))
 ```
 
-### Advanced Analysis
+### Week Range Search (Programmatic)
 ```python
-from flight_analyzer import FlightAnalyzer
+from Main.enhanced_flight_search import EnhancedFlightSearchClient
 
-analyzer = FlightAnalyzer()
-
-# Get comprehensive insights
-summary = analyzer.get_search_summary(30)  # Last 30 days
-price_analysis = analyzer.get_price_analysis()
-airline_analysis = analyzer.get_airline_analysis()
-
-# Generate report
-report = analyzer.generate_report('LAX-JFK')
-print(report)
+client = EnhancedFlightSearchClient()
+res = client.search_week_range('LAX','JFK','2025-11-30')
+print(res.get('week_summary'))
 ```
 
 ## 🧪 Testing
@@ -283,16 +263,12 @@ The earlier Phase 1 sandbox has been fully merged. Shared utilities now live in 
 
 ## 📅 Standardized Date Parsing
 
-Accepted input formats (CLIs):
-- MM-DD-YYYY  (e.g. 12-30-2025)
-- MM-DD       (rolls to next year if already past; leap day searches forward up to 5 years for next valid Feb 29)
+CLI Accepted input formats (priority):
+1. DD-MM-YYYY
+2. DD-MM
+3. Legacy fallback MM-DD-YYYY / MM-DD if unambiguous
 
-All internal logic uses canonical `YYYY-MM-DD`.
-
-Return date must be >= outbound date. Horizon (min/max days ahead) enforced unless `--no-horizon` (Phase 1 CLI) is specified.
-
-Utilities:
-`date_utils.py` exports: `parse_date`, `within_horizon`, `validate_and_order`.
+Internal logic uses canonical `YYYY-MM-DD`. Return date must be >= outbound date. Utilities: `parse_date`, `within_horizon`, `validate_and_order` in `date_utils.py`.
 
 ## 🛠️ Configuration
 
@@ -316,10 +292,7 @@ Utilities:
 - Internet connection (for API calls)
 
 ### Python Packages
-- `requests` - HTTP requests
-- `sqlite3` - Database operations
-- `json` - JSON processing
-- `datetime` - Date/time handling
+Core dependencies are in `requirements.txt`. Standard library modules (json, datetime, sqlite3) are used directly; third-party minimized to reduce attack surface.
 
 ### SerpAPI Account
 - Sign up at https://serpapi.com/
@@ -338,8 +311,8 @@ Solution: Set SERPAPI_KEY environment variable (no local key file supported)
 
 **2. Database Errors**
 ```
-Error: Database not found
-Solution: Run schema_upgrade.py to initialize database
+Error: unable to open database file
+Solution: Ensure script is run from project root or let enhanced_flight_search compute absolute path automatically.
 ```
 
 **3. Import Errors**
@@ -362,9 +335,8 @@ LOGGING_CONFIG = {
 ### Current Implementation Status
 - ✅ Database Schema: Complete
 - ✅ API Client: Complete  
-- ✅ Data Processor: Complete
-- ✅ Analysis Tools: Complete
-- ✅ Demo System: Complete
+- ✅ Unified Search Engine: Complete
+- ✅ Legacy Demos: Removed
 - ✅ Documentation: Complete
 
 ### Database Statistics

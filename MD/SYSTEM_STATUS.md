@@ -50,11 +50,9 @@
 ### Main Application (/Main)
 - `config.py` - System configuration and API key management
 - `serpapi_client.py` - SerpAPI integration with validation and rate limiting
-- `flight_processor.py` - Data processing pipeline (legacy, partially superseded)
-- `enhanced_flight_search.py` - Unified cache-first search & storage engine
-- `flight_analyzer.py` - Analysis and reporting tools
-- `flight_system_demo.py` - Complete system demonstration
-- `simulation_demo.py` - Legacy simulation (real data strongly preferred; mock usage discouraged)
+- `flight_processor.py` - Legacy processing helpers (retained for reference)
+- `enhanced_flight_search.py` - Unified cache-first search & storage engine (includes CLI)
+- `core/` - Shared validation & logging utilities
 
 ### Database Components (/DB)
 - `Main_DB.db` - SQLite database with flight data
@@ -76,14 +74,13 @@
 ## 🧪 Testing Results
 
 ### Last System Test: SUCCESSFUL ✅
-**Date:** 2025-01-04  
-**Test:** Simulation Demo Execution  
+**Date:** 2025-09-08  
+**Test:** Pytest suite & CLI argument helper integration  
 **Results:**
-- ✅ 3 flight searches processed successfully
-- ✅ Database records created (IDs: 5, 6, 7)
-- ✅ Raw API data simulation stored
-- ✅ Structured data extraction working
-- ✅ Analysis functions operational
+- ✅ 9 tests passed
+- ✅ CLI helper shows on insufficient arguments
+- ✅ Cache module functioning
+- ✅ Raw + structured storage intact
 
 ### Test Coverage
 - ✅ Database operations (create, read, update)
@@ -134,10 +131,7 @@
 - **Performance**: ✅ Optimized for analysis
 
 ### Analysis Capabilities
-- **Route Analysis**: Price trends, popular routes
-- **Airline Metrics**: Performance and pricing analysis
-- **Search Patterns**: User behavior and trends
-- **Reporting**: Comprehensive system reports
+Legacy analysis module removed; future analytics will be reintroduced as focused utilities. Current emphasis: reliable data capture & search caching.
 
 ---
 
@@ -152,10 +146,10 @@
 - [x] Configuration management ready
 
 ### For Live Operation
-1. **Add SerpAPI Key**: Replace placeholder with valid key
-2. **Run System**: Execute `flight_system_demo.py`
-3. **Monitor**: Check database for data accumulation
-4. **Analyze**: Use analysis tools for insights
+1. **Add SerpAPI Key**: Set SERPAPI_KEY environment variable
+2. **Run Searches**: Use `python Main/enhanced_flight_search.py <FROM> <TO> <DD-MM-YYYY>`
+3. **Monitor**: Inspect `api_queries` & related tables in `Main_DB.db`
+4. **Extend**: Build analytic scripts referencing structured tables
 
 ### Fallback Options
 - **Simulation Mode**: Continue testing without API key
@@ -207,7 +201,7 @@ All specified requirements have been met:
 - ✅ API integration complete and tested
 - ✅ Database created with comprehensive schema
 - ✅ Raw data preservation implemented
-- ✅ Analysis capabilities operational
+- ✅ Unified search & storage operational
 - ✅ Documentation complete
 - ✅ Testing successful
 - ✅ Production ready
