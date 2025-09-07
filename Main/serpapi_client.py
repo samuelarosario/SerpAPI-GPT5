@@ -7,116 +7,19 @@ import requests
 import json
 import time
 import logging
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any, Tuple
+from datetime import datetime
+from typing import Dict, Optional, Any
 from urllib.parse import urlencode
 import hashlib
 
 from config import (
     SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, 
-    VALIDATION_RULES, get_api_key
+    get_api_key
 )
 
-class RateLimiter:
-    """Simple rate limiter for API requests"""
-    
-    def __init__(self):
-        self.requests_minute = []
-        self.requests_hour = []
-    
-    def can_make_request(self) -> bool:
-        """Check if we can make a request within rate limits"""
-        now = datetime.now()
-        
-        # Clean old requests
-        self.requests_minute = [req_time for req_time in self.requests_minute 
-                              if now - req_time < timedelta(minutes=1)]
-        self.requests_hour = [req_time for req_time in self.requests_hour 
-                            if now - req_time < timedelta(hours=1)]
-        
-        # Check limits
-        minute_limit = RATE_LIMIT_CONFIG['requests_per_minute']
-        hour_limit = RATE_LIMIT_CONFIG['requests_per_hour']
-        
-        return (len(self.requests_minute) < minute_limit and 
-                len(self.requests_hour) < hour_limit)
-    
-    def record_request(self):
-        """Record a new request"""
-        now = datetime.now()
-        self.requests_minute.append(now)
-        self.requests_hour.append(now)
-
-class FlightSearchValidator:
-    """Validates flight search parameters"""
-    
-    @staticmethod
-    def validate_airport_code(code: str) -> bool:
-        """Validate airport code format"""
-        if not code:
-            return False
-        return (len(code) == VALIDATION_RULES['airport_code_length'] and 
-                code.isupper() and code.isalpha())
-    
-    @staticmethod
-    def validate_date(date_str: str) -> bool:
-        """Validate date format and range"""
-        try:
-            date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-            today = datetime.now().date()
-            min_date = today + timedelta(days=VALIDATION_RULES['min_search_days_ahead'])
-            max_date = today + timedelta(days=VALIDATION_RULES['max_search_days_ahead'])
-            
-            return min_date <= date_obj.date() <= max_date
-        except ValueError:
-            return False
-    
-    @staticmethod
-    def validate_passengers(adults: int, children: int, infants_seat: int, infants_lap: int) -> bool:
-        """Validate passenger counts"""
-        total = adults + children + infants_seat + infants_lap
-        return (adults >= 1 and 
-                total <= VALIDATION_RULES['max_passengers'] and
-                all(count >= 0 for count in [adults, children, infants_seat, infants_lap]))
-    
-    @staticmethod
-    def validate_search_params(params: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate complete search parameters"""
-        errors = []
-        
-        # Check required fields
-        for field in VALIDATION_RULES['required_fields']:
-            if field not in params or not params[field]:
-                errors.append(f"Required field missing: {field}")
-        
-        # Validate airport codes
-        if 'departure_id' in params:
-            if not FlightSearchValidator.validate_airport_code(params['departure_id']):
-                errors.append(f"Invalid departure airport code: {params['departure_id']}")
-        
-        if 'arrival_id' in params:
-            if not FlightSearchValidator.validate_airport_code(params['arrival_id']):
-                errors.append(f"Invalid arrival airport code: {params['arrival_id']}")
-        
-        # Validate dates
-        if 'outbound_date' in params:
-            if not FlightSearchValidator.validate_date(params['outbound_date']):
-                errors.append(f"Invalid outbound date: {params['outbound_date']}")
-        
-        if 'return_date' in params:
-            if not FlightSearchValidator.validate_date(params['return_date']):
-                errors.append(f"Invalid return date: {params['return_date']}")
-        
-        # Validate passengers
-        adults = params.get('adults', 1)
-        children = params.get('children', 0)
-        infants_seat = params.get('infants_in_seat', 0)
-        infants_lap = params.get('infants_on_lap', 0)
-        
-        if not FlightSearchValidator.validate_passengers(adults, children, infants_seat, infants_lap):
-            errors.append("Invalid passenger configuration")
-        
-        return len(errors) == 0, errors
+from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
+from core.logging_setup import init_logging  # type: ignore
+init_logging()
 
 class SerpAPIFlightClient:
     """SerpAPI Google Flights API Client"""
@@ -162,25 +65,23 @@ class SerpAPIFlightClient:
         return params
     
     def search_flights(self, **kwargs) -> Dict[str, Any]:
+        """Search for flights using SerpAPI.
+
+        Accepts all standard search params plus optional:
+            enforce_horizon (bool): toggle horizon validation
+            enforce_infant_rule (bool): toggle infant seating rule
         """
-        Search for flights using SerpAPI
-        
-        Args:
-            departure_id: Departure airport code
-            arrival_id: Arrival airport code
-            outbound_date: Departure date (YYYY-MM-DD)
-            return_date: Return date (YYYY-MM-DD) - optional for one-way
-            **kwargs: Additional search parameters
-        
-        Returns:
-            Dict containing search results and metadata
-        """
-        
+        enforce_horizon = kwargs.pop('enforce_horizon', True)
+        enforce_infant_rule = kwargs.pop('enforce_infant_rule', True)
         # Build parameters
         params = self.build_search_params(**kwargs)
         
         # Validate parameters
-        is_valid, errors = FlightSearchValidator.validate_search_params(params)
+        is_valid, errors = FlightSearchValidator.validate_search_params(
+            params,
+            enforce_horizon=enforce_horizon,
+            enforce_infant_rule=enforce_infant_rule
+        )
         if not is_valid:
             raise ValueError(f"Invalid search parameters: {'; '.join(errors)}")
         

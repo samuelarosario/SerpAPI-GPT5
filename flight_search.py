@@ -7,38 +7,15 @@ Example: python flight_search.py POM CDG 2025-10-10
 
 import sys
 import os
-from datetime import datetime
+from datetime import datetime, date as _date
+import argparse
+
+from date_utils import parse_date, DateParseError, validate_and_order
 
 # Add Main directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), 'Main'))
 
 from enhanced_flight_search import EnhancedFlightSearchClient
-
-def parse_date(date_str):
-    """Parse date string in various formats"""
-    formats = ['%Y-%m-%d', '%m-%d', '%m/%d', '%m/%d/%Y', '%Y/%m/%d']
-    
-    for fmt in formats:
-        try:
-            parsed_date = datetime.strptime(date_str, fmt)
-            # If year not provided, assume current year
-            if fmt in ['%m-%d', '%m/%d']:
-                parsed_date = parsed_date.replace(year=datetime.now().year)
-            return parsed_date.strftime('%Y-%m-%d')
-        except ValueError:
-            continue
-    
-    # Try parsing "Oct 10" format
-    try:
-        # Add current year if not provided
-        if len(date_str.split()) == 2:
-            date_str += f" {datetime.now().year}"
-        parsed_date = datetime.strptime(date_str, '%b %d %Y')
-        return parsed_date.strftime('%Y-%m-%d')
-    except ValueError:
-        pass
-    
-    raise ValueError(f"Could not parse date: {date_str}")
 
 def display_single_date_results(results):
     """Display results for single date search"""
@@ -168,52 +145,44 @@ def display_week_range_results(results):
             print(f'Error: {results.get("error", "Unknown error")}')
 
 def main():
-    # Check for week range flag
-    week_range = False
-    args = sys.argv[1:]
-    
-    if '--week' in args or '-w' in args:
-        week_range = True
-        args = [arg for arg in args if arg not in ['--week', '-w']]
-    
-    if len(args) != 3:
-        print("Usage: python flight_search.py <departure> <arrival> <date> [--week]")
-        print("Examples:")
-        print("  python flight_search.py POM CDG 2025-10-10")
-        print("  python flight_search.py POM CDG 'Oct 10'")
-        print("  python flight_search.py CDG POM 10-15")
-        print("  python flight_search.py POM CDG 'Oct 10' --week  # Search 7 days starting Oct 10")
-        print("  python flight_search.py POM CDG 2025-10-10 -w   # Short flag for week search")
-        sys.exit(1)
-    
-    departure = args[0].upper()
-    arrival = args[1].upper()
-    date_input = args[2]
-    
+    parser = argparse.ArgumentParser(description='Legacy Flight Search CLI (standardized date parsing)')
+    parser.add_argument('departure')
+    parser.add_argument('arrival')
+    parser.add_argument('outbound_date', help='MM-DD-YYYY or MM-DD')
+    parser.add_argument('return_date', nargs='?', help='Optional return date (MM-DD-YYYY or MM-DD)')
+    parser.add_argument('--week', '-w', action='store_true', help='Search 7 consecutive days (ignores return_date)')
+    parser.add_argument('--no-horizon', action='store_true', help='Disable date horizon validation (passes to validator if integrated later)')
+    args = parser.parse_args()
+
+    dep = args.departure.upper()
+    arr = args.arrival.upper()
     try:
-        # Parse the date
-        formatted_date = parse_date(date_input)
-        
-        if week_range:
-            print(f'�️ WEEK RANGE SEARCH: {departure} → {arrival} (7 days from {formatted_date})')
-            print('=' * 70)
-        else:
-            print(f'�🛫 FLIGHT SEARCH: {departure} → {arrival} ({formatted_date})')
-            print('=' * 60)
-        
-        # Initialize client and search
-        client = EnhancedFlightSearchClient()
-        
-        if week_range:
-            results = client.search_week_range(departure, arrival, formatted_date)
+        outbound_fmt = parse_date(args.outbound_date)
+        return_fmt = parse_date(args.return_date) if args.return_date else None
+        if return_fmt:
+            validate_and_order(outbound_fmt, return_fmt)
+    except DateParseError as e:
+        print(f"❌ Date error: {e}")
+        sys.exit(1)
+
+    banner = 'WEEK RANGE' if args.week else 'FLIGHT'
+    print(f'🛫 {banner} SEARCH: {dep} → {arr} ({outbound_fmt}{" return=" + return_fmt if return_fmt else ""})')
+    print('=' * (20 + len(banner)))
+
+    client = EnhancedFlightSearchClient()
+    if args.no_horizon:
+        print('⚙️  Horizon validation override requested (--no-horizon).')
+    try:
+        if args.week:
+            results = client.search_week_range(dep, arr, outbound_fmt)
             display_week_range_results(results)
         else:
-            results = client.search_flights(departure, arrival, formatted_date)
+            if return_fmt:
+                # EnhancedFlightSearchClient expects search_flights signature (dep, arr, date, ...)
+                results = client.search_flights(dep, arr, outbound_fmt, return_fmt)
+            else:
+                results = client.search_flights(dep, arr, outbound_fmt)
             display_single_date_results(results)
-    
-    except ValueError as e:
-        print(f"❌ Error: {e}")
-        sys.exit(1)
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
         sys.exit(1)

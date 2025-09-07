@@ -3,6 +3,7 @@ Configuration settings for SerpAPI Flight Data System
 """
 
 import os
+from dotenv import load_dotenv
 from typing import Dict, Any
 
 # SerpAPI Configuration
@@ -24,7 +25,7 @@ DEFAULT_SEARCH_PARAMS = {
     'children': 0,
     'infants_in_seat': 0,
     'infants_on_lap': 0,
-    'travel_class': 1,  # Economy
+    'travel_class': 3,  # Business (default changed from Economy)
     'type': 1,  # Round trip
     'deep_search': False,
     'show_hidden': False,
@@ -71,17 +72,16 @@ VALIDATION_RULES = {
 
 def get_api_key() -> str:
     """
-    Get SerpAPI key from environment variable only
+    Get SerpAPI key from environment variable or .env file
     SECURITY: API keys should never be stored in plain text files
     """
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
     api_key = os.environ.get('SERPAPI_KEY')
     if not api_key:
         raise ValueError(
             "SERPAPI_KEY environment variable not set. "
-            "Please set it using: "
-            "[System.Environment]::SetEnvironmentVariable('SERPAPI_KEY', 'your_key', [System.EnvironmentVariableTarget]::User)"
+            "Please set it in the .env file at the project root or as an environment variable."
         )
-    
     return api_key
 
 def validate_config() -> Dict[str, Any]:

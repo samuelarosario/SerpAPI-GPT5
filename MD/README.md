@@ -227,7 +227,7 @@ result = system.search_and_store_flights(
     outbound_date='2025-09-15',
     return_date='2025-09-22',
     adults=2,
-    travel_class=1  # Economy
+    travel_class=3  # Business (default)
 )
 
 # Analyze route
@@ -270,7 +270,36 @@ python config.py              # Test configuration
 python serpapi_client.py      # Test API client
 python flight_processor.py    # Test data processor
 python flight_analyzer.py     # Test analyzer
+python "Phase 1\\Main\\enhanced_flight_search.py" LAX JFK 12-30-2025 --no-horizon  # Phase 1 enhanced client
+python -m unittest discover -s tests -p "test_*.py" -v  # Run shared tests
 ```
+
+## 🔄 Phase 1 Refactor (In Progress)
+
+An isolated Phase 1 workspace (`Phase 1/`) introduces:
+- Unified validation & rate limiting (`common_validation.py`).
+- Central logging (`logging_setup.py`).
+- Standardized date parsing & horizon logic (`date_utils.py`).
+- Refactored enhanced flight search with cache + transactional persistence.
+- Numeric price normalization (stored amount + currency separately).
+
+Merge Strategy (planned):
+1. Replace duplicated validator/rate limiter in `Main/` with imports from Phase 1.
+2. Deprecate legacy monolith pieces once parity tests pass.
+3. Add CI workflow to run new test suite.
+
+## 📅 Standardized Date Parsing
+
+Accepted input formats (CLIs):
+- MM-DD-YYYY  (e.g. 12-30-2025)
+- MM-DD       (rolls to next year if already past; leap day searches forward up to 5 years for next valid Feb 29)
+
+All internal logic uses canonical `YYYY-MM-DD`.
+
+Return date must be >= outbound date. Horizon (min/max days ahead) enforced unless `--no-horizon` (Phase 1 CLI) is specified.
+
+Utilities:
+`date_utils.py` exports: `parse_date`, `within_horizon`, `validate_and_order`.
 
 ## 🛠️ Configuration
 

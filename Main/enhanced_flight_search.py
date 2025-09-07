@@ -12,7 +12,10 @@ import hashlib
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
-import os
+import os, sys, pathlib
+ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
 import sys
 
 # Add DB directory to path for imports
@@ -536,60 +539,7 @@ class FlightSearchCache:
         # This method is kept for compatibility but store_flight_data should be used instead
         pass
 
-class RateLimiter:
-    """Simple rate limiter for API requests"""
-    
-    def __init__(self):
-        self.requests_minute = []
-        self.requests_hour = []
-    
-    def can_make_request(self) -> bool:
-        """Check if we can make a request within rate limits"""
-        now = datetime.now()
-        
-        # Clean old requests
-        self.requests_minute = [req_time for req_time in self.requests_minute 
-                              if now - req_time < timedelta(minutes=1)]
-        self.requests_hour = [req_time for req_time in self.requests_hour 
-                            if now - req_time < timedelta(hours=1)]
-        
-        # Check limits
-        minute_limit = RATE_LIMIT_CONFIG['requests_per_minute']
-        hour_limit = RATE_LIMIT_CONFIG['requests_per_hour']
-        
-        return (len(self.requests_minute) < minute_limit and 
-                len(self.requests_hour) < hour_limit)
-    
-    def record_request(self):
-        """Record a new request"""
-        now = datetime.now()
-        self.requests_minute.append(now)
-        self.requests_hour.append(now)
-
-class FlightSearchValidator:
-    """Validates flight search parameters"""
-    
-    @staticmethod
-    def validate_airport_code(code: str) -> bool:
-        """Validate IATA airport code format"""
-        if not code or len(code) != 3:
-            return False
-        return code.isalpha() and code.isupper()
-    
-    @staticmethod
-    def validate_date(date_str: str) -> bool:
-        """Validate date format (YYYY-MM-DD)"""
-        try:
-            datetime.strptime(date_str, '%Y-%m-%d')
-            return True
-        except ValueError:
-            return False
-    
-    @staticmethod
-    def validate_passengers(adults: int, children: int = 0, infants_seat: int = 0, infants_lap: int = 0) -> bool:
-        """Validate passenger counts"""
-        total_passengers = adults + children + infants_seat + infants_lap
-        return adults >= 1 and total_passengers <= 9 and infants_lap <= adults
+from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
 
 class EnhancedFlightSearchClient:
     """Enhanced Flight Search Client with Local Database Cache"""
@@ -1084,15 +1034,23 @@ class EnhancedFlightSearchClient:
                 """, (yesterday.isoformat(),))
                 recent_searches = cursor.fetchone()[0]
                 
-                # Popular routes
-                cursor.execute("""
-                SELECT departure_id, arrival_id, COUNT(*) as search_count
-                FROM flight_searches
-                GROUP BY departure_id, arrival_id
-                ORDER BY search_count DESC
-                LIMIT 5
-                """)
-                popular_routes = cursor.fetchall()
+                # Popular routes (defensive: only if columns exist)
+                popular_routes = []
+                try:
+                    cursor.execute("PRAGMA table_info(flight_searches)")
+                    cols = {row[1] for row in cursor.fetchall()}
+                    if {'departure_id','arrival_id'} <= cols:
+                        cursor.execute("""
+                        SELECT departure_id, arrival_id, COUNT(*) as search_count
+                        FROM flight_searches
+                        GROUP BY departure_id, arrival_id
+                        ORDER BY search_count DESC
+                        LIMIT 5
+                        """)
+                        popular_routes = cursor.fetchall()
+                except Exception:
+                    # silently ignore missing columns
+                    popular_routes = []
                 
                 return {
                     'total_cached_searches': total_searches,

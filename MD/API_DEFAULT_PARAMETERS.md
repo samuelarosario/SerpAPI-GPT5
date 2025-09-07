@@ -39,7 +39,7 @@ DEFAULT_SEARCH_PARAMS = {
 ### **Flight Type & Class**
 ```python
 {
-    'travel_class': 1,         # 1=Economy, 2=Premium, 3=Business, 4=First
+    'travel_class': 3,         # DEFAULT NOW Business (1=Economy, 2=Premium, 3=Business, 4=First)
     'type': 1,                 # 1=Round trip, 2=One way, 3=Multi-city
 }
 ```
@@ -97,7 +97,7 @@ VALIDATION_RULES = {
 
 ### **Example Override**
 ```python
-# Default: economy class, 1 adult, USD
+# Default: business class, 1 adult, USD
 client.search_flights(
     departure_id="POM",
     arrival_id="MNL", 
@@ -132,6 +132,6 @@ PROCESSING_CONFIG = {
 
 ## 🎯 **Summary**
 
-The system is configured for **US-based searches** with **economy class** preferences by default, optimized for **comprehensive data capture** with **24-hour cache freshness** and **proper rate limiting** to respect API quotas.
+The system is configured for **US-based searches** with **business class** preferences by default, optimized for **comprehensive data capture** with **24-hour cache freshness** and **proper rate limiting** to respect API quotas.
 
 All parameters can be overridden on a per-search basis while maintaining sensible defaults for routine operations.
