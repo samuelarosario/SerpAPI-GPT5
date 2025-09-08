@@ -66,16 +66,14 @@ Current schema is documented in `DB/current_schema.sql` - this is the canonical 
 
 ### 4. Test the System
 
-**With Real API (requires valid key):**
-```bash
-cd Main
-python flight_system_demo.py
+**Run a sample search (real API key required):**
+```powershell
+python Main/enhanced_flight_search.py LAX JFK 15-09-2025 22-09-2025 --adults 2
 ```
 
-**With Mock Data (no API key needed):**
-```bash
-cd Main
-python simulation_demo.py
+**Week range example:**
+```powershell
+python Main/enhanced_flight_search.py LAX JFK 15-09-2025 --week
 ```
 
 ### 5. (Optional) Session Cleanup Automation
@@ -266,22 +264,14 @@ print(res.get('week_summary'))
 
 ## 🧪 Testing
 
-### Simulation Mode
+### Testing
 Temporary or experimental test scripts must reside in `tests/` and be prefixed with `temp_`.
 
-### Live API Testing
-With valid SerpAPI key:
-```bash
-python flight_system_demo.py
-```
-
-### Component Testing
-```bash
-python config.py              # Test configuration
-python serpapi_client.py      # Test API client
-python flight_processor.py    # Test data processor
-python flight_analyzer.py     # Test analyzer
-python -m unittest discover -s tests -p "test_*.py" -v  # Run shared tests
+Component checks (from project root):
+```powershell
+python Main/config.py          # Config sanity
+python Main/serpapi_client.py  # Basic client invocation (will exit if no key)
+python -m pytest -q            # Run automated test suite
 ```
 
 ## 🔄 Refactor Status
@@ -299,12 +289,11 @@ Internal logic uses canonical `YYYY-MM-DD`. Return date must be >= outbound date
 
 ## 🛠️ Configuration
 
-### Environment Variables
-- `SERPAPI_KEY` - Your SerpAPI key
+### Environment Variable
+- `SERPAPI_KEY` - Your SerpAPI key (must be set; no file-based fallback)
 
-### Configuration Files
+### Configuration File
 - `Main/config.py` - System configuration
-- `Temp/api_key.txt` - API key storage (fallback)
 
 ### Database Configuration
 - Path: `DB/Main_DB.db`
@@ -398,9 +387,9 @@ LOGGING_CONFIG = {
 
 For system issues or questions:
 1. Check troubleshooting section
-2. Review agent-instructions.md
-3. Run simulation_demo.py for testing
-4. Verify configuration with config.py
+2. Review `agent-instructions.md`
+3. Run a minimal search via `enhanced_flight_search.py`
+4. Verify configuration with `Main/config.py`
 
 ## 📄 License
 
