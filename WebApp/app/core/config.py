@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     access_token_minutes: int = 15
     refresh_token_days: int = 7
     algorithm: str = "HS256"
+    admin_api_key: str = Field("change_me_admin_key", alias="WEBAPP_ADMIN_API_KEY")
 
     class Config:
         env_file = ".env"

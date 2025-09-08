@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 
@@ -8,7 +8,7 @@ from WebApp.app.auth import models, schemas
 from WebApp.app.auth.hash import hash_password, verify_password
 from WebApp.app.core.config import settings
 from WebApp.app.auth.jwt import create_access_token, create_refresh_token
-from WebApp.app.core.auth_logging import log_auth
+from WebApp.app.core.auth_logging import log_auth, tail_auth_log
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -89,3 +89,29 @@ def refresh(token: str):
         access_token=create_access_token(sub),
         refresh_token=create_refresh_token(sub)
     )
+
+
+@router.get("/me", response_model=schemas.UserRead)
+def me(request: Request, db: Session = Depends(get_db)):
+    # Expect Authorization: Bearer <token>
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = auth.split(None,1)[1]
+    try:
+        payload = jwt.decode(token, settings.webapp_jwt_secret, algorithms=[settings.algorithm])
+        sub = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = db.query(models.User).filter(models.User.id == int(sub)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.get("/logs")
+def auth_logs(request: Request, lines: int = 50):
+    api_key = request.headers.get("X-Admin-Key")
+    if not api_key or api_key != settings.admin_api_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    return tail_auth_log(lines)

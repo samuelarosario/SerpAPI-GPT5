@@ -15,24 +15,29 @@ app.include_router(auth_router)
 async def root(request: Request):
     return templates.TemplateResponse("login.html", {"request": request})
 
-from jose import jwt, JWTError
-from WebApp.app.core.config import settings
-
-def get_current_user(token: str | None = None):
-    # Token passed via query for simplicity in prototype; later use Authorization header
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing token")
-    try:
-        payload = jwt.decode(token, settings.webapp_jwt_secret, algorithms=[settings.algorithm])
-        return payload.get("sub")
-    except JWTError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
 @app.get("/dashboard", response_class=HTMLResponse, tags=["ui"])
-async def dashboard(request: Request, user_id: str = Depends(get_current_user)):
-    return HTMLResponse(f"""<!DOCTYPE html><html><head><title>Dashboard</title>
-    <meta charset='utf-8'/><style>body{{font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f0f6ff;margin:0;}} .wrap{{text-align:center;}} h1{{color:#134e9b;margin-bottom:.5rem;}} p{{color:#475569;font-size:.85rem;}}</style></head>
-    <body><div class='wrap'><h1>Welcome, User {user_id}</h1><p>Blank page placeholder.</p></div></body></html>""")
+async def dashboard(request: Request):
+        # Client-side JS will fetch /auth/me with stored bearer token.
+        return HTMLResponse("""<!DOCTYPE html><html><head><title>Dashboard</title>
+        <meta charset='utf-8'/><style>body{font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f0f6ff;margin:0;} .wrap{text-align:center;} h1{color:#134e9b;margin-bottom:.5rem;} p{color:#475569;font-size:.85rem;} button{margin-top:1rem;padding:.5rem .9rem;border:1px solid #134e9b;background:#fff;color:#134e9b;border-radius:6px;cursor:pointer;} button:hover{background:#134e9b;color:#fff;}</style></head>
+        <body><div class='wrap'><h1 id='welcome'>Loading...</h1><p id='info'>Checking session.</p><button id='logout'>Logout</button></div>
+        <script>
+        async function init(){
+            const t = localStorage.getItem('access_token');
+            if(!t){ window.location='/'; return; }
+            try {
+                const res = await fetch('/auth/me',{headers:{'Authorization':'Bearer '+t}});
+                if(!res.ok){ throw new Error('unauth'); }
+                const user = await res.json();
+                document.getElementById('welcome').textContent = 'Welcome, '+user.email;
+                document.getElementById('info').textContent = 'User ID '+user.id;
+            } catch(e){ localStorage.removeItem('access_token'); window.location='/'; }
+        }
+        document.getElementById('logout').addEventListener('click', ()=>{ localStorage.clear(); window.location='/'; });
+        init();
+        </script>
+        </body></html>""")
 
 @app.get("/health", tags=["system"])
 async def health() -> dict:
