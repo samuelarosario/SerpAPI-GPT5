@@ -84,6 +84,9 @@ graph TB
 ### SerpAPI Client
 `Main/serpapi_client.py` – Secure SerpAPI integration.
 
+### Web Application Layer (Added 2025-09-08)
+`WebApp/app/main.py` now exposes an authenticated `/flight-search` UI and `/api/flight_search` endpoint. The endpoint is a thin wrapper over `EnhancedFlightSearchClient.search_flights` (origin, destination, date only) using a **singleton** EFS instance to avoid duplicate module loads, path divergence, and metrics fragmentation. Temporary debug endpoints used during persistence validation (efs_env, ping, flight_searches_summary) were fully removed after stabilization. UI currently renders results as compact cards (route, price, duration, stops, segments); slated for future redesign to a Google-style vertical list.
+
 ### Deprecated (Removed) Components
 `api_approval_system.py`, `simple_api_approval.py`, `approved_flight_search.py`, demo scripts, analyzer modules – removed; see `DOC_DRIFT_MATRIX.md`.
 
