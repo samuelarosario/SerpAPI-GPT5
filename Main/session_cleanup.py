@@ -117,6 +117,7 @@ def main():
     parser = argparse.ArgumentParser(description="Session cleanup utility (safe defaults: preserve raw API data)")
     parser.add_argument('--cache-age-hours', type=int, default=24, help='Age threshold for cached searches (flight_searches)')
     parser.add_argument('--raw-retention-days', type=int, default=int(os.getenv('SERPAPI_RAW_RETENTION_DAYS','0')), help='Retention for raw api_queries (0 = keep all)')
+    parser.add_argument('--prune-raw-cache-age', action='store_true', help='Also prune raw api_queries older than --cache-age-hours (authoritative override)')
     parser.add_argument('--vacuum', action='store_true', help='VACUUM the database after deletions')
     parser.add_argument('--orphans', action='store_true', help='Remove orphaned dependent rows')
     parser.add_argument('--dry-run', action='store_true', help='Show actions without modifying data')
@@ -133,6 +134,23 @@ def main():
         summary['cache_prune'] = prune_search_cache(args.cache_age_hours, dry_run=args.dry_run)
         if args.raw_retention_days > 0:
             summary['raw_prune'] = prune_raw_api(args.raw_retention_days, dry_run=args.dry_run)
+        elif args.prune_raw_cache_age:
+            # derive cutoff in days (floor >=1 if hours >=24) else treat as fractional days for reporting
+            hours = args.cache_age_hours
+            # Use hours directly by converting to timedelta comparison (custom inline logic)
+            cutoff = datetime.now() - timedelta(hours=hours)
+            with _connect() as conn:
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM api_queries WHERE created_at < ?", (cutoff.isoformat(),))
+                ids = [r[0] for r in cur.fetchall()]
+                if not args.dry_run and ids:
+                    cur.executemany("DELETE FROM api_queries WHERE id = ?", [(i,) for i in ids])
+                    conn.commit()
+                summary['raw_prune_cache_age'] = {
+                    'cutoff': cutoff.isoformat(),
+                    'removed_raw_count': 0 if args.dry_run else len(ids),
+                    'would_remove_raw_count': len(ids) if args.dry_run else None
+                }
         if args.orphans:
             summary['orphans'] = remove_orphans(dry_run=args.dry_run)
         if args.vacuum:
