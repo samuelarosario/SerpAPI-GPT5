@@ -131,23 +131,40 @@ def me(request: Request, db: Session = Depends(get_db)):
     return user
 
 
+def _current_user(request: Request, db: Session):
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    token = auth.split(None,1)[1]
+    try:
+        payload = jwt.decode(token, settings.webapp_jwt_secret, algorithms=[settings.algorithm])
+        sub = payload.get("sub")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+    user = db.query(models.User).filter(models.User.id == int(sub)).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+def _require_admin_user(request: Request, db: Session):
+    user = _current_user(request, db)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
 @router.get("/logs")
-def auth_logs(request: Request, lines: int = 50):
-    api_key = request.headers.get("X-Admin-Key")
-    if not api_key or api_key != settings.admin_api_key:
-        raise HTTPException(status_code=403, detail="Forbidden")
+def auth_logs(request: Request, lines: int = 50, db: Session = Depends(get_db)):
+    _require_admin_user(request, db)
     return tail_auth_log(lines)
 
 
-def _require_admin_key(request: Request):
-    api_key = request.headers.get("X-Admin-Key")
-    if not api_key or api_key != settings.admin_api_key:
-        raise HTTPException(status_code=403, detail="Forbidden")
+def _require_admin_key(request: Request):  # legacy shim (unused after JWT admin migration)
+    raise HTTPException(status_code=410, detail="Deprecated admin auth model")
 
 
 @router.get("/users", response_model=list[schemas.UserRead])
 def list_users_admin(request: Request, db: Session = Depends(get_db)):
-    _require_admin_key(request)
+    _require_admin_user(request, db)
     return db.query(models.User).all()
 
 
@@ -157,7 +174,7 @@ class PasswordUpdate(BaseException):
 
 @router.post("/users/{user_id}/password")
 def set_user_password(user_id: int, request: Request, body: dict, db: Session = Depends(get_db)):
-    _require_admin_key(request)
+    _require_admin_user(request, db)
     new_pwd = body.get("password")
     if not new_pwd or len(new_pwd) < 3:
         raise HTTPException(status_code=400, detail="Password too short")
@@ -172,7 +189,7 @@ def set_user_password(user_id: int, request: Request, body: dict, db: Session = 
 
 @router.post("/users/{user_id}/toggle_active")
 def toggle_active(user_id: int, request: Request, db: Session = Depends(get_db)):
-    _require_admin_key(request)
+    _require_admin_user(request, db)
     user = db.query(models.User).filter(models.User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")

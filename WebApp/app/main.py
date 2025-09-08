@@ -51,27 +51,20 @@ async def dashboard(request: Request):
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
     return HTMLResponse("""<!DOCTYPE html><html><head><title>Admin</title><meta charset='utf-8'/>
-    <style>body{font-family:system-ui;margin:0;background:#f5f8fb;color:#0f2642;padding:2rem;}h1{margin-top:0;color:#134e9b;}table{border-collapse:collapse;width:100%;margin-top:1rem;}th,td{border:1px solid #d0d9e4;padding:.5rem .6rem;font-size:.8rem;}th{background:#e3eef9;text-align:left;}button{cursor:pointer;border:1px solid #134e9b;background:#fff;color:#134e9b;padding:.35rem .6rem;border-radius:4px;}button:hover{background:#134e9b;color:#fff;}#loginBox{max-width:320px;margin:4rem auto;background:#fff;border:1px solid #d0e2f0;border-radius:8px;padding:1rem 1.25rem;box-shadow:0 4px 20px -6px rgba(0,0,0,.08);}input{width:100%;padding:.5rem .6rem;margin:.4rem 0;border:1px solid #b8c9d9;border-radius:4px;}#notice{font-size:.7rem;color:#475569;margin-top:.5rem;}#err{color:#b91c1c;font-size:.75rem;margin-top:.25rem;}#ok{color:#047857;font-size:.75rem;margin-top:.25rem;} .pill{display:inline-block;padding:.15rem .5rem;border-radius:1rem;font-size:.6rem;background:#134e9b;color:#fff;margin-left:.35rem;} .inactive{background:#b91c1c !important;}</style></head>
-    <body><div id='app'></div>
+    <style>body{font-family:system-ui;margin:0;background:#f5f8fb;color:#0f2642;padding:2rem;}h1{margin-top:0;color:#134e9b;}table{border-collapse:collapse;width:100%;margin-top:1rem;}th,td{border:1px solid #d0d9e4;padding:.5rem .6rem;font-size:.8rem;}th{background:#e3eef9;text-align:left;}button{cursor:pointer;border:1px solid #134e9b;background:#fff;color:#134e9b;padding:.35rem .6rem;border-radius:4px;}button:hover{background:#134e9b;color:#fff;}#err{color:#b91c1c;font-size:.75rem;margin-top:.5rem;}#ok{color:#047857;font-size:.75rem;margin-top:.5rem;} .pill{display:inline-block;padding:.15rem .5rem;border-radius:1rem;font-size:.6rem;background:#134e9b;color:#fff;margin-left:.35rem;} .inactive{background:#b91c1c !important;}</style></head>
+    <body><h1>Admin Portal</h1><div id='notice'>Loading...</div><div id='wrap'></div><div id='ok'></div><div id='err'></div><button id='back' style='margin-top:1rem'>Back</button>
     <script>
-    const app = document.getElementById('app');
-    const LS_KEY='admin_api_key';
-    function loginView(){
-        app.innerHTML = `<div id="loginBox"><h1>Admin Login</h1><input id="k" placeholder="Admin API Key"/><button id="go">Enter</button><div id='err'></div><div id='notice'>Use configured admin API key.</div></div>`;
-        document.getElementById('go').onclick=()=>{ localStorage.setItem(LS_KEY, document.getElementById('k').value.trim()); load(); };
-    }
-    async function fetchJSON(url, opts={}){ const key = localStorage.getItem(LS_KEY); opts.headers = Object.assign({'X-Admin-Key': key,'Content-Type':'application/json'}, opts.headers||{}); const r= await fetch(url, opts); if(!r.ok) throw new Error(await r.text()); try{return await r.json();}catch{return {};} }
-    function render(users){
-        let rows = users.map(u=>`<tr><td>${u.id}</td><td>${u.email}${u.is_admin?'<span class=\"pill\">ADMIN</span>':''}${u.is_active?'':'<span class=\"pill inactive\">INACTIVE</span>'}</td><td><button data-act='reset' data-id='${u.id}'>Reset PW</button> <button data-act='toggle' data-id='${u.id}'>Toggle Active</button></td></tr>`).join('');
-        app.innerHTML = `<h1>User Management</h1><button id='logout'>Logout</button><table><thead><tr><th>ID</th><th>Email</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table><div id='ok'></div><div id='err'></div>`;
-        document.getElementById('logout').onclick=()=>{ localStorage.removeItem(LS_KEY); loginView(); };
-        app.querySelectorAll('button[data-act]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-id'); const act=btn.getAttribute('data-act'); try{ if(act==='reset'){ const np=prompt('New password for user '+id+':'); if(!np) return; await fetchJSON('/auth/users/'+id+'/password',{method:'POST',body:JSON.stringify({password:np})}); } else if(act==='toggle'){ await fetchJSON('/auth/users/'+id+'/toggle_active',{method:'POST'}); } loadUsers(); }catch(e){ showErr(e.message); } }; });
-    }
-    function showErr(m){ const e=document.getElementById('err'); if(e){ e.textContent=m; } }
-    function showOk(m){ const e=document.getElementById('ok'); if(e){ e.textContent=m; } }
-    async function loadUsers(){ try{ const users = await fetchJSON('/auth/users'); render(users); } catch(e){ showErr('Error: '+e.message); if(e.message.includes('Forbidden')){ loginView(); } } }
-    function load(){ const key=localStorage.getItem(LS_KEY); if(!key){ loginView(); return; } loadUsers(); }
-    load();
+    const wrap=document.getElementById('wrap');
+    const err=document.getElementById('err');
+    const ok=document.getElementById('ok');
+    document.getElementById('back').onclick=()=>{window.location='/dashboard'};
+    function showErr(m){err.textContent=m;}
+    function showOk(m){ok.textContent=m;}
+    async function fetchJSON(url,opts={}){ const t=localStorage.getItem('access_token'); if(!t){ window.location='/'; return;} opts.headers=Object.assign({'Authorization':'Bearer '+t,'Content-Type':'application/json'},opts.headers||{}); const r=await fetch(url,opts); if(!r.ok) throw new Error(await r.text()); try{return await r.json();}catch{return {};} }
+    function render(users){ let rows=users.map(u=>`<tr><td>${u.id}</td><td>${u.email}${u.is_admin?'<span class=\"pill\">ADMIN</span>':''}${u.is_active?'':'<span class=\"pill inactive\">INACTIVE</span>'}</td><td><button data-act='reset' data-id='${u.id}'>Reset PW</button> <button data-act='toggle' data-id='${u.id}'>Toggle Active</button></td></tr>`).join(''); wrap.innerHTML=`<table><thead><tr><th>ID</th><th>Email</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table>`; wrap.querySelectorAll('button[data-act]').forEach(btn=>{ btn.onclick=async()=>{ const id=btn.getAttribute('data-id'); const act=btn.getAttribute('data-act'); try{ if(act==='reset'){ const np=prompt('New password for user '+id+':'); if(!np) return; await fetchJSON('/auth/users/'+id+'/password',{method:'POST',body:JSON.stringify({password:np})}); showOk('Password reset'); } else if(act==='toggle'){ await fetchJSON('/auth/users/'+id+'/toggle_active',{method:'POST'}); showOk('Toggled active'); } loadUsers(); }catch(e){ showErr(e.message); } }; }); }
+    async function ensureAdmin(){ try{ const me=await fetchJSON('/auth/me'); if(!me.is_admin){ showErr('Not an admin'); return false;} return true;} catch(e){ showErr('Auth required'); return false; } }
+    async function loadUsers(){ try{ const users=await fetchJSON('/auth/users'); render(users); } catch(e){ showErr('Error '+e.message);} }
+    (async()=>{ if(await ensureAdmin()){ loadUsers(); }})();
     </script></body></html>""")
 
 @app.get("/health", tags=["system"])
