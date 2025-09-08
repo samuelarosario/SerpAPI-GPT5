@@ -5,7 +5,26 @@ from fastapi.templating import Jinja2Templates
 import pathlib
 
 from WebApp.app.auth.routes import router as auth_router
-from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
+# Lazy import helper for EnhancedFlightSearchClient to avoid modifying existing EFS modules
+import sys, os, logging
+def _get_efs_client():
+    try:
+        from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
+    except ModuleNotFoundError as e:
+        # Ensure project root and its 'Main' subdirectory are on sys.path so nested 'core' import resolves
+        project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        main_dir = os.path.join(project_root, 'Main')
+        modified = False
+        if project_root not in sys.path:
+            sys.path.append(project_root)
+            modified = True
+        if main_dir not in sys.path and os.path.isdir(main_dir):
+            sys.path.append(main_dir)
+            modified = True
+        if modified:
+            logging.getLogger(__name__).warning("Adjusted sys.path for EFS import: %s", [p for p in (project_root, main_dir)])
+        from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
+    return EnhancedFlightSearchClient()
 
 app = FastAPI(title="SerpAPI Flight WebApp", version="0.1.0")
 
@@ -75,14 +94,14 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
 
 @app.get("/api/flight_search", response_class=JSONResponse, tags=["flight"])
 async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5, description="Origin IATA"),
-                                                        destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
-                                                        date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD")):
-        # Minimal wrapper: only uses origin/destination/date; relies on EFS caching.
-        client = EnhancedFlightSearchClient()
-        def run_search():
-                return client.search_flights(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
-        result = await run_in_threadpool(run_search)
-        return JSONResponse(result)
+                            destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
+                            date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD")):
+    # Minimal wrapper: only uses origin/destination/date; relies on existing EFS caching logic.
+    client = _get_efs_client()
+    def run_search():
+        return client.search_flights(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
+    result = await run_in_threadpool(run_search)
+    return JSONResponse(result)
 
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
