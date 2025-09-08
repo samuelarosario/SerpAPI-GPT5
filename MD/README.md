@@ -78,6 +78,33 @@ cd Main
 python simulation_demo.py
 ```
 
+### 5. (Optional) Session Cleanup Automation
+
+Use the provided script to prune expired cached searches while preserving raw API data:
+
+```powershell
+python Main/session_cleanup.py --cache-age-hours 24 --orphans --vacuum --json
+```
+
+Raw data (api_queries) is NEVER deleted unless you explicitly set a retention:
+
+```powershell
+# Keep only last 7 days of raw queries (irreversible)
+python Main/session_cleanup.py --raw-retention-days 7
+```
+
+To run automatically when closing a dev session you can create a VS Code task and invoke it manually before exit, or add a PowerShell profile snippet:
+
+```powershell
+function Close-SerpApiSession {
+    Push-Location "C:\Users\MY PC\SerpAPI - V3"
+    python Main/session_cleanup.py --cache-age-hours 24 --orphans
+    Pop-Location
+}
+```
+
+Then call `Close-SerpApiSession` before closing the terminal.
+
 ## 🔧 Core Components
 
 ### 1. SerpAPI Client (`serpapi_client.py`)
