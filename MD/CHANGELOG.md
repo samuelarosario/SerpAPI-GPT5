@@ -12,6 +12,8 @@
 - Added `Main/__init__.py` (namespace initializer) and minimal, centralized path bootstrap in runtime modules.
 - Removed duplicate module loading that previously caused separate `METRICS` instances (e.g., `core.metrics` vs `Main.core.metrics`).
 - Added `structured_storage_failures` counter and test (`test_structured_storage_failure_metric.py`).
+ - Added guard & alias coalescing in `core/metrics.py` to fail fast on conflicting duplicate loads and unify module identity.
+
 
 - Added automated schema migration (drop legacy query_timestamp) with safety & test coverage.
 - Updated cache logging to include search_id context; unified jitter per spec.

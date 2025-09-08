@@ -46,3 +46,14 @@ def timed():  # decorator for optional future use
     return _wrap
 
 __all__ = ['METRICS']
+
+# ---- Import Path Guard & Alias Coalescing ----------------------------------
+# Prevent duplicate module execution under both 'core.metrics' and 'Main.core.metrics'
+# (previously caused separate METRICS instances on Windows path variations).
+import sys as _sys
+_current = _sys.modules.get(__name__)
+for _alias in ('core.metrics', 'Main.core.metrics'):
+    _existing = _sys.modules.get(_alias)
+    if _existing and _existing is not _current:
+        raise RuntimeError(f"Duplicate metrics module load detected (alias={_alias})")
+    _sys.modules[_alias] = _current
