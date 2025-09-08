@@ -209,6 +209,27 @@ flowchart TD
 
 ## 🗄️ Database Schema
 
+### Versioning & Integrity Controls (Added 2025-09-08)
+
+The database now implements baseline version manifest + migration history with checksum:
+
+- `schema_version` (single-row) holds current baseline: `2025.09.08-baseline`.
+- `migration_history` stores (id, version, applied_at, description, checksum).
+- A SHA256 checksum of the live schema (tables + indexes) is backfilled for baseline and updated on future approved migrations.
+- Write-Ahead Logging (WAL) enabled by default for improved concurrent read performance (`PRAGMA journal_mode=WAL`).
+- Drift detection: `SerpAPIDatabase.detect_schema_drift()` returns missing/unexpected tables; failing test signals unauthorized change.
+- Integrity checks: `run_integrity_check()` wraps `PRAGMA quick_check` + `PRAGMA integrity_check`.
+- Snapshot regeneration: `generate_schema_snapshot()` produces/refreshes `DB/current_schema.sql` and auto-updates baseline checksum if empty.
+
+Operational Policy:
+1. Propose change (design + justification) → seek explicit owner approval.
+2. Implement migration script or inline migration guard.
+3. Regenerate snapshot via helper, verify checksum stored.
+4. Add test coverage (presence of new objects + drift passes).
+5. Increment `schema_version` and append migration_history row with new checksum.
+
+Unauthorized schema edits (detected via drift or checksum mismatch) trigger remediation: revert file, regenerate from last approved snapshot, or apply approved migration retroactively.
+
 ### Core Tables Structure
 
 ```mermaid
