@@ -1,16 +1,7 @@
-import pathlib
-import sys
-
 import pytest
 import requests
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-MAIN_DIR = ROOT / 'Main'
-if str(MAIN_DIR) not in sys.path:
-    sys.path.append(str(MAIN_DIR))
-
-from core.common_validation import RateLimiter  # type: ignore
-from serpapi_client import SerpAPIFlightClient  # type: ignore
+from Main.core.common_validation import RateLimiter  # type: ignore
+from Main.serpapi_client import SerpAPIFlightClient  # type: ignore
 
 # This test focuses on RateLimiter logic only; it does not perform real API calls.
 # It manipulates the limiter counters directly and ensures behavior.

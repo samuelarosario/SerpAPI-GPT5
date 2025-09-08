@@ -1,15 +1,6 @@
-import pathlib
-import sys
-
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-MAIN = ROOT / 'Main'
-for p in (str(ROOT), str(MAIN)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
 import importlib
 import sys
-
-from core.metrics import METRICS as METRICS_A  # canonical import
+from Main.core.metrics import METRICS as METRICS_A  # type: ignore
 
 
 def test_metrics_singleton_alias_identity():

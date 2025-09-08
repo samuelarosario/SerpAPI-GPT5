@@ -1,12 +1,4 @@
-import os
-import sys
-
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-MAIN_DIR = os.path.join(ROOT, 'Main')
-if MAIN_DIR not in sys.path:
-    sys.path.insert(0, MAIN_DIR)
-
-from enhanced_flight_search import parse_cli_date  # type: ignore
+from Main.enhanced_flight_search import parse_cli_date  # type: ignore
 
 
 def test_ambiguous_day_first():

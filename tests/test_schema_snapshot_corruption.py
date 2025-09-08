@@ -1,12 +1,9 @@
 import pathlib
 import re
 import sqlite3
-import sys
+from DB.database_helper import SerpAPIDatabase  # type: ignore
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-from DB.database_helper import SerpAPIDatabase  # type: ignore
 
 SCHEMA_PATH = ROOT / 'DB' / 'current_schema.sql'
 

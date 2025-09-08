@@ -1,14 +1,4 @@
-import os
-import sys
-
-# Ensure project root on path for direct module imports
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-MAIN_DIR = os.path.join(ROOT, 'Main')
-for p in (ROOT, MAIN_DIR):
-    if p not in sys.path:
-        sys.path.insert(0, p)
-
-from Main.enhanced_flight_search import FlightSearchCache
+from Main.enhanced_flight_search import FlightSearchCache  # type: ignore
 
 
 def test_cache_key_stability():
@@ -38,9 +28,9 @@ def test_cache_key_stability():
 
 
 def test_result_type_normalization():
-    cache = FlightSearchCache(db_path='DB/Main_DB.db')
-    # Access private method indirectly via normalization logic used during reconstruction
-    # We emulate normalization decisions
-    assert ('best' if 'best_flight' in ('best','best_flight') else 'other') == 'best'
-    assert ('best' if 'best' in ('best','best_flight') else 'other') == 'best'
-    assert ('best' if 'other_flight' in ('best','best_flight') else 'other') == 'other'
+    # Simple invariants replicating internal mapping logic (no DB dependency)
+    def normalize(label: str) -> str:
+        return 'best' if label in ('best','best_flight') else 'other'
+    assert normalize('best_flight') == 'best'
+    assert normalize('best') == 'best'
+    assert normalize('other_flight') == 'other'
