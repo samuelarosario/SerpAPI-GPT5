@@ -1,9 +1,11 @@
-from fastapi import FastAPI, Request, Depends, HTTPException, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import FastAPI, Request, Depends, HTTPException, status, Query
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 import pathlib
 
 from WebApp.app.auth.routes import router as auth_router
+from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 
 app = FastAPI(title="SerpAPI Flight WebApp", version="0.1.0")
 
@@ -20,8 +22,8 @@ async def root(request: Request):
 async def dashboard(request: Request):
     # Client-side JS will fetch /auth/me with stored bearer token.
     return HTMLResponse("""<!DOCTYPE html><html><head><title>Dashboard</title>
-    <meta charset='utf-8'/><style>body{font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f0f6ff;margin:0;} .wrap{text-align:center;} h1{color:#134e9b;margin-bottom:.5rem;} p{color:#475569;font-size:.85rem;} button{margin-top:1rem;padding:.5rem .9rem;border:1px solid #134e9b;background:#fff;color:#134e9b;border-radius:6px;cursor:pointer;} button:hover{background:#134e9b;color:#fff;}</style></head>
-    <body><div class='wrap'><h1 id='welcome'>Loading...</h1><p id='info'>Checking session.</p><div id='adminBox' style='margin-top:.75rem'></div><button id='logout'>Logout</button></div>
+    <meta charset='utf-8'/><style>body{font-family:system-ui;display:flex;min-height:100vh;align-items:center;justify-content:center;background:#f0f6ff;margin:0;} .wrap{text-align:center;max-width:620px;} h1{color:#134e9b;margin-bottom:.5rem;} p{color:#475569;font-size:.85rem;} button, a.action{margin-top:1rem;padding:.5rem .9rem;border:1px solid #134e9b;background:#fff;color:#134e9b;border-radius:6px;cursor:pointer;text-decoration:none;display:inline-block;} button:hover, a.action:hover{background:#134e9b;color:#fff;}</style></head>
+    <body><div class='wrap'><h1 id='welcome'>Loading...</h1><p id='info'>Checking session.</p><div style='margin-top:1rem'><a class='action' href='/flight-search'>Flight Search</a></div><div id='adminBox' style='margin-top:.75rem'></div><button id='logout'>Logout</button></div>
     <script>
     async function init(){
         const t = localStorage.getItem('access_token');
@@ -47,6 +49,40 @@ async def dashboard(request: Request):
     init();
     </script>
     </body></html>""")
+
+@app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
+async def flight_search_ui(request: Request):  # Simple HTML + JS form
+        return HTMLResponse("""<!DOCTYPE html><html><head><title>Flight Search</title><meta charset='utf-8'/>
+        <style>body{font-family:system-ui;margin:0;background:#eef5fb;min-height:100vh;}header{background:#134e9b;color:#fff;padding:.9rem 1.2rem;}h1{margin:0;font-size:1.15rem;}main{max-width:860px;margin:1.2rem auto;background:#fff;padding:1.2rem 1.5rem;border-radius:10px;box-shadow:0 2px 8px -2px rgba(0,40,90,.15);}form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:1rem;}label{font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;color:#134e9b;display:block;margin-bottom:.25rem;}input{padding:.55rem .6rem;border:1px solid #bcd3ea;border-radius:6px;font-size:.85rem;background:#f5faff;min-width:140px;}button{padding:.6rem 1rem;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;font-size:.8rem;}button:hover{background:#134e9b;}#results{margin-top:1rem;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.9rem;margin-top:.75rem;} .card{border:1px solid #d5e3f2;padding:.65rem .7rem;border-radius:8px;background:#f8fbfe;font-size:.7rem;line-height:1.25rem;} .src{font-weight:600;color:#0f2747;font-size:.75rem;margin-bottom:.25rem;} .price{color:#047857;font-weight:600;} .err{color:#b91c1c;font-size:.7rem;margin-top:.5rem;} .meta{font-size:.6rem;color:#475569;margin-top:.4rem;} a.back{color:#fff;text-decoration:none;margin-left:1rem;font-size:.7rem;} .tags span{display:inline-block;background:#134e9b;color:#fff;font-size:.55rem;padding:.15rem .45rem;border-radius:1rem;margin-right:.3rem;margin-top:.25rem;}</style></head>
+        <body><header><h1>Flight Search <a class='back' href='/dashboard'>&larr; Back</a></h1></header><main>
+        <form id='fsForm'>
+            <div><label for='origin'>Origin</label><input id='origin' name='origin' placeholder='e.g. JFK' required maxlength='5'/></div>
+            <div><label for='destination'>Destination</label><input id='destination' name='destination' placeholder='e.g. LAX' required maxlength='5'/></div>
+            <div><label for='date'>Date</label><input id='date' name='date' type='date' required/></div>
+            <div><button type='submit'>Search</button></div>
+        </form>
+        <div id='status' class='meta'>Enter origin, destination and date (YYYY-MM-DD).</div>
+        <div id='results'></div>
+        <script>
+        const f=document.getElementById('fsForm');
+        const statusEl=document.getElementById('status');
+        const resEl=document.getElementById('results');
+        function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; return Promise.reject();} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+        f.addEventListener('submit',async(e)=>{ e.preventDefault(); resEl.innerHTML=''; const o=origin.value.trim().toUpperCase(); const d=destination.value.trim().toUpperCase(); const dt=date.value; if(!o||!d||!dt){ statusEl.textContent='All fields required.'; return;} statusEl.textContent='Searching...'; try { const r=await authFetch(`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`); if(!r.ok){ const txt=await r.text(); statusEl.textContent='Error: '+txt; return;} const data=await r.json(); if(!data.success){ statusEl.textContent='No results: '+(data.error||'unknown'); return;} statusEl.textContent=`Source: ${data.source} | Search ID: ${data.search_id||'n/a'}`; const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]); if(flights.length===0){ resEl.innerHTML='<p class="meta">No flights found.</p>'; return;} let html='<div class="grid">'; flights.slice(0,30).forEach(flt=>{ html+=`<div class='card'><div class='src'>${flt.flights?flt.flights.join(' • '): (flt.flight || 'Flight')}</div><div class='price'>${flt.price||'N/A'}</div><div class='meta'>${flt.departure_airport||''} → ${flt.arrival_airport||''}</div><div class='meta'>Dur: ${(flt.duration||'').toString().replace('duration:','')}</div><div class='tags'>${flt.type?`<span>${flt.type}</span>`:''}${flt.airline?`<span>${flt.airline}</span>`:''}</div></div>`; }); html+='</div>'; resEl.innerHTML=html; } catch(err){ statusEl.textContent='Error '+err.message; }
+        });
+        </script>
+        </main></body></html>""")
+
+@app.get("/api/flight_search", response_class=JSONResponse, tags=["flight"])
+async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5, description="Origin IATA"),
+                                                        destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
+                                                        date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD")):
+        # Minimal wrapper: only uses origin/destination/date; relies on EFS caching.
+        client = EnhancedFlightSearchClient()
+        def run_search():
+                return client.search_flights(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
+        result = await run_in_threadpool(run_search)
+        return JSONResponse(result)
 
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
