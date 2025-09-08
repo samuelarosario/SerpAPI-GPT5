@@ -180,34 +180,7 @@ The interactive approval workflow (search_flights_with_approval, request_api_app
 
 If future governance or quota tracking is required, implement it as a non-blocking async metrics collector rather than an inline approval gate.
 
-### Cost Calculation Functions
-
-```mermaid
-graph TD
-    A[_calculate_cost] --> B[Identify Call Type]
-    B --> C{Flight Search?}
-    C -->|Yes| D[Cost = $0.05]
-    C -->|No| E{Hotel Search?}
-    E -->|Yes| F[Cost = $0.05]
-    E -->|No| G[Cost = $0.01]
-    D --> H[Apply Usage Multipliers]
-    F --> H
-    G --> H
-    H --> I[Check Daily Limits]
-    I --> J[return Estimated Cost]
-    
-    K[generate_usage_report] --> L[Load Call History]
-    L --> M[Filter Today's Calls]
-    M --> N[Count by Type]
-    N --> O[Calculate Total Cost]
-    O --> P[Generate Statistics]
-    P --> Q[Format Report String]
-    Q --> R[Add Timestamp]
-    R --> S[return Formatted Report]
-    
-    style A fill:#fff8e1
-    style K fill:#e8f5e8
-```
+// Historic cost calculation diagrams removed (subsystem deprecated)
 
 ---
 
@@ -443,7 +416,6 @@ graph TD
 - `_parse_response()` - 20-100ms (JSON processing)
 
 ### User-Interactive Functions
-- `request_api_approval()` - User-dependent (interactive)
 - `search_flights()` with API - 2-5 seconds (network call)
 
 ---
