@@ -125,6 +125,7 @@ class FlightSearchCache:
                     cur.execute("DELETE FROM flight_results WHERE search_id = ?", (sid,))
                     cur.execute("DELETE FROM price_insights WHERE search_id = ?", (sid,))
                     cur.execute("DELETE FROM flight_searches WHERE search_id = ?", (sid,))
+                # Raw api_queries are only pruned when explicitly requested
                 if prune_raw:
                     cur.execute("DELETE FROM api_queries WHERE created_at < ?", (cutoff.isoformat(),))
                 conn.commit()

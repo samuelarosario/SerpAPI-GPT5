@@ -1,99 +1,32 @@
-"""
-Enhanced Flight Search Client with Local Database Cache
-Searches local DB first, then uses API if data not found
-"""
+"""Enhanced Flight Search Client with Local Database Cache.
 
-import requests
-import json
-import time
-import logging
-import sqlite3
-import hashlib
+Cache-first strategy; raw API data retained by default per retention policy.
+"""
+import requests, json, time, logging, sqlite3, hashlib, os, sys, pathlib
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
-import os, sys, pathlib
+
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.append(str(ROOT_DIR))
-import sys
 
 # Add DB directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'DB'))
 
 from config import (
-    SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, 
+    SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG,
     VALIDATION_RULES, get_api_key
 )
-
 from cache import FlightSearchCache
-try:
-    from DB.database_helper import SerpAPIDatabase
+try:  # prefer real helper
+    from DB.database_helper import SerpAPIDatabase  # type: ignore
 except ImportError:  # pragma: no cover
-    class SerpAPIDatabase:  # minimal fallback
+    class SerpAPIDatabase:  # minimal fallback (no-op raw storage)
         def __init__(self, db_path: str):
             self.db_path = db_path
-        def insert_api_response(self, **kwargs):
+        def insert_api_response(self, **kwargs):  # pragma: no cover
             return None
-    
-    def cleanup_old_data(self, max_age_hours: int = 24):
-        """Remove flight data older than specified hours to keep database fresh"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
-                
-                # Get search IDs that are too old
-                cursor.execute("""
-                SELECT search_id FROM flight_searches 
-                WHERE created_at < ?
-                """, (cutoff_time.isoformat(),))
-                
-                old_search_ids = [row[0] for row in cursor.fetchall()]
-                
-                if old_search_ids:
-                    self.logger.info(f"Cleaning up {len(old_search_ids)} old flight searches")
-                    
-                    # Delete related data in correct order (due to foreign key constraints)
-                    for search_id in old_search_ids:
-                        # Delete layovers first
-                        cursor.execute("""
-                        DELETE FROM layovers 
-                        WHERE flight_result_id IN (
-                            SELECT id FROM flight_results WHERE search_id = ?
-                        )
-                        """, (search_id,))
-                        
-                        # Delete flight segments
-                        cursor.execute("""
-                        DELETE FROM flight_segments 
-                        WHERE flight_result_id IN (
-                            SELECT id FROM flight_results WHERE search_id = ?
-                        )
-                        """, (search_id,))
-                        
-                        # Delete flight results
-                        cursor.execute("DELETE FROM flight_results WHERE search_id = ?", (search_id,))
-                        
-                        # Delete price insights
-                        cursor.execute("DELETE FROM price_insights WHERE search_id = ?", (search_id,))
-                        
-                        # Delete flight search
-                        cursor.execute("DELETE FROM flight_searches WHERE search_id = ?", (search_id,))
-                    
-                    # Clean up old API queries too
-                    cursor.execute("DELETE FROM api_queries WHERE created_at < ?", (cutoff_time.isoformat(),))
-                    
-                    conn.commit()
-                    self.logger.info(f"Cleaned up {len(old_search_ids)} old searches and related data")
-                    
-        except Exception as e:
-            self.logger.error(f"Error during cleanup: {str(e)}")
-
-    def store_cache_key(self, search_id: str, search_params: Dict[str, Any]) -> None:
-        """Store cache key for a search in the database (legacy method)"""
-        # This method is kept for compatibility but store_flight_data should be used instead
-        pass
 
 from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
 
@@ -468,129 +401,57 @@ class EnhancedFlightSearchClient:
                     except:
                         continue
                 
-                if prices:
-                    daily_min_prices[date_str] = min(prices)
-                    daily_avg_prices[date_str] = round(sum(prices) / len(prices), 2)
-                    daily_flight_counts[date_str] = len(all_day_flights)
-                    
-                    # Categorize by weekday vs weekend
-                    if day_name in ['Saturday', 'Sunday']:
-                        weekday_analysis['weekend'].extend(prices)
-                    else:
-                        weekday_analysis['weekday'].extend(prices)
+                # Calculate daily min and avg prices
+                daily_min_prices[date_str] = min(prices)
+                daily_avg_prices[date_str] = sum(prices) / len(prices)
+                
+                # Classify day as weekday or weekend
+                if day_name in ['Saturday', 'Sunday']:
+                    weekday_analysis['weekend'].append(date_str)
+                else:
+                    weekday_analysis['weekday'].append(date_str)
         
-        # Calculate weekday vs weekend trends
-        trend_analysis = {}
-        if weekday_analysis['weekday'] and weekday_analysis['weekend']:
-            weekday_avg = round(sum(weekday_analysis['weekday']) / len(weekday_analysis['weekday']), 2)
-            weekend_avg = round(sum(weekday_analysis['weekend']) / len(weekday_analysis['weekend']), 2)
-            trend_analysis = {
-                'weekday_avg_price': weekday_avg,
-                'weekend_avg_price': weekend_avg,
-                'weekend_premium': round(weekend_avg - weekday_avg, 2),
-                'weekend_premium_percent': round(((weekend_avg - weekday_avg) / weekday_avg) * 100, 1) if weekday_avg > 0 else 0
-            }
+        # Overall trends
+        trend_analysis = {
+            'overall_price_trend': 'stable',
+            'price_increase_days': [],
+            'price_decrease_days': []
+        }
+        
+        # Compare first and last day for trend direction
+        if len(daily_min_prices) > 1:
+            sorted_days = sorted(daily_min_prices.keys())
+            first_day = sorted_days[0]
+            last_day = sorted_days[-1]
+            
+            if daily_min_prices[last_day] < daily_min_prices[first_day]:
+                trend_analysis['overall_price_trend'] = 'decreasing'
+            elif daily_min_prices[last_day] > daily_min_prices[first_day]:
+                trend_analysis['overall_price_trend'] = 'increasing'
         
         return {
             'daily_min_prices': daily_min_prices,
-            'daily_avg_prices': daily_avg_prices, 
+            'daily_avg_prices': daily_avg_prices,
             'daily_flight_counts': daily_flight_counts,
-            'weekday_vs_weekend': trend_analysis,
-            'total_days_with_data': len(daily_min_prices)
+            'weekday_analysis': weekday_analysis,
+            'trend_analysis': trend_analysis
         }
     
-    def _validate_search_params(self, params: Dict[str, Any]) -> Tuple[bool, List[str]]:
-        """Validate search parameters"""
-        errors = []
-        
-        # Validate airport codes
-        if not FlightSearchValidator.validate_airport_code(params.get('departure_id', '')):
-            errors.append(f"Invalid departure airport code: {params.get('departure_id')}")
-        
-        if not FlightSearchValidator.validate_airport_code(params.get('arrival_id', '')):
-            errors.append(f"Invalid arrival airport code: {params.get('arrival_id')}")
-        
-        # Validate dates
-        if 'outbound_date' in params:
-            if not FlightSearchValidator.validate_date(params['outbound_date']):
-                errors.append(f"Invalid outbound date: {params['outbound_date']}")
-        
-        if 'return_date' in params and params['return_date']:
-            if not FlightSearchValidator.validate_date(params['return_date']):
-                errors.append(f"Invalid return date: {params['return_date']}")
-        
-        # Validate passengers
-        adults = params.get('adults', 1)
-        children = params.get('children', 0)
-        infants_seat = params.get('infants_in_seat', 0)
-        infants_lap = params.get('infants_on_lap', 0)
-        
-        if not FlightSearchValidator.validate_passengers(adults, children, infants_seat, infants_lap):
-            errors.append("Invalid passenger configuration")
-        
-        return len(errors) == 0, errors
-    
-    def _calculate_cache_age(self, cache_timestamp: str) -> float:
-        """Calculate age of cached data in hours"""
-        try:
-            cache_time = datetime.fromisoformat(cache_timestamp.replace('Z', '+00:00'))
-            now = datetime.now()
-            if cache_time.tzinfo:
-                # Make now timezone aware if cache_time is
-                from datetime import timezone
-                now = now.replace(tzinfo=timezone.utc)
-            
-            age_delta = now - cache_time
-            return age_delta.total_seconds() / 3600
-        except Exception:
-            return 0.0
-    
     def clear_cache(self, older_than_hours: int = 168) -> Dict[str, Any]:
+        """DEPRECATED: Raw API retention is indefinite by default.
+
+        This method no longer deletes raw api_queries automatically to honor the
+        authoritative retention policy. It now returns a no-op summary. If
+        explicit raw pruning is required, use the dedicated session_cleanup.py
+        utility with --raw-retention-days or --prune-raw-cache-age flags.
         """
-        Clear cached flight data older than specified hours
-        
-        Args:
-            older_than_hours: Clear cache older than this many hours (default 7 days)
-            
-        Returns:
-            Dict with cleanup results
-        """
-        try:
-            cutoff_time = datetime.now() - timedelta(hours=older_than_hours)
-            
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # Count records to be deleted
-                cursor.execute("""
-                SELECT COUNT(*) FROM api_queries 
-                WHERE query_timestamp < ?
-                """, (cutoff_time.isoformat(),))
-                
-                count_to_delete = cursor.fetchone()[0]
-                
-                # Delete old records (cascading will handle related tables)
-                cursor.execute("""
-                DELETE FROM api_queries 
-                WHERE query_timestamp < ?
-                """, (cutoff_time.isoformat(),))
-                
-                conn.commit()
-                
-                self.logger.info(f"Cleared {count_to_delete} cached records older than {older_than_hours} hours")
-                
-                return {
-                    'success': True,
-                    'deleted_count': count_to_delete,
-                    'cutoff_time': cutoff_time.isoformat()
-                }
-                
-        except Exception as e:
-            self.logger.error(f"Error clearing cache: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
+        self.logger.warning("clear_cache() is deprecated and performs no action (raw retention policy). Use session_cleanup.py for pruning.")
+        return {
+            'success': True,
+            'deleted_count': 0,
+            'cutoff_time': (datetime.now() - timedelta(hours=older_than_hours)).isoformat(),
+            'deprecated': True
+        }
     
     def get_cache_stats(self) -> Dict[str, Any]:
         """Get statistics about cached flight data"""
@@ -604,9 +465,10 @@ class EnhancedFlightSearchClient:
                 
                 # Searches in last 24 hours
                 yesterday = datetime.now() - timedelta(hours=24)
+                # Use created_at (authoritative) instead of query_timestamp for recent activity measure
                 cursor.execute("""
                 SELECT COUNT(*) FROM api_queries 
-                WHERE query_timestamp > ?
+                WHERE created_at > ?
                 """, (yesterday.isoformat(),))
                 recent_searches = cursor.fetchone()[0]
                 
