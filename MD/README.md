@@ -6,6 +6,7 @@ Release v0.3.0: import path stabilization, metrics singleton guard, schema check
 See CHANGELOG for details.
 
 Badge automation: A GitHub Actions workflow (`tests-badge.yml`) runs on each push, executes pytest, and commits an updated `badges/tests.json` (shields.io JSON schema). You can embed via raw URL as above.
+\n+CI consolidation: Workflows merged into single `ci.yml` running tests on Python 3.11, 3.12, 3.13 and generating badges (tests & coverage) on master. Coverage threshold enforced by failing test job if tests fail.
 
 A comprehensive flight data collection, storage, and analysis system using SerpAPI Google Flights API.
 
