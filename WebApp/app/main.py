@@ -140,6 +140,48 @@ async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5,
     result = await run_in_threadpool(run_search)
     return JSONResponse(result)
 
+# --- TEMP DEBUG ENDPOINT (remove later) ---
+@app.get("/debug/flight_searches_summary", response_class=JSONResponse, tags=["debug"])
+async def debug_flight_searches_summary(route: str | None = Query(None, description="Optional route filter e.g. JFK-LAX")):
+    """Return a summary of rows in flight_searches to verify EFS persistence.
+    Not authenticated; intended for local debugging only.
+    """
+    import sqlite3, os, json
+    client = _get_efs_client()
+    db_path = client.db_path  # path EFS client resolved
+    data: dict[str, object] = {"db_path": db_path, "exists": os.path.exists(db_path)}
+    if not os.path.exists(db_path):
+        return JSONResponse(data)
+    try:
+        con = sqlite3.connect(db_path)
+        cur = con.cursor()
+        cur.execute("SELECT COUNT(*) FROM flight_searches")
+        total = cur.fetchone()[0]
+        data["total_rows"] = total
+        cur.execute("PRAGMA table_info(flight_searches)")
+        cols = [c[1] for c in cur.fetchall()]
+        data["columns"] = cols
+        cur.execute("""
+            SELECT search_id, departure_airport_code, arrival_airport_code, outbound_date, return_date, total_results, created_at
+            FROM flight_searches ORDER BY id DESC LIMIT 5
+        """)
+        data["last_5"] = cur.fetchall()
+        if route and '-' in route:
+            dep, arr = route.split('-',1)
+            cur.execute("""
+                SELECT search_id, outbound_date, return_date, total_results, created_at
+                FROM flight_searches
+                WHERE departure_airport_code = ? AND arrival_airport_code = ?
+                ORDER BY id DESC LIMIT 3
+            """, (dep.upper(), arr.upper()))
+            data["route_recent"] = cur.fetchall()
+    except Exception as e:
+        data["error"] = str(e)
+    finally:
+        try: con.close()
+        except Exception: pass
+    return JSONResponse(data)
+
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
     return HTMLResponse("""<!DOCTYPE html><html><head><title>Admin</title><meta charset='utf-8'/>
