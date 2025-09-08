@@ -50,6 +50,12 @@ CREATE TABLE api_queries (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE schema_version (
+    id INTEGER PRIMARY KEY CHECK(id=1),
+    version TEXT NOT NULL,
+    applied_at TEXT NOT NULL
+);
+
 CREATE TABLE database_metadata (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 database_version TEXT,
@@ -224,7 +230,8 @@ CREATE INDEX idx_route_analytics_route ON route_analytics(route_key);
 -- SCHEMA SUMMARY
 -- =============================================================================
 -- Tables: 10
--- Tables List: airlines, airports, api_queries, database_metadata, flight_results, flight_searches, flight_segments, layovers, price_insights, route_analytics
+-- Tables: 11
+-- Tables List: airlines, airports, api_queries, schema_version, database_metadata, flight_results, flight_searches, flight_segments, layovers, price_insights, route_analytics
 -- Generated: 2025-09-06T12:56:54.218663
 -- 
 -- This schema file is automatically generated from the current database
