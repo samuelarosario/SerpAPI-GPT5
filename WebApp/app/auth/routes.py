@@ -9,6 +9,7 @@ from WebApp.app.auth.hash import hash_password, verify_password
 from WebApp.app.core.config import settings
 from WebApp.app.auth.jwt import create_access_token, create_refresh_token
 from WebApp.app.core.auth_logging import log_auth, tail_auth_log
+from passlib.context import CryptContext
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -30,10 +31,14 @@ def _ensure_default_user():
         db = SessionLocal()
         from WebApp.app.auth.hash import hash_password
         from WebApp.app.auth import models
-        for demo_email, pwd in [("user@local", "user"), ("user@example.com", "StrongPassw0rd!")]:
+        for demo_email, pwd, admin_flag in [
+            ("user@local", "user", False),
+            ("user@example.com", "StrongPassw0rd!", False),
+            ("admin@local", "admin", True)
+        ]:
             exists = db.query(models.User).filter(models.User.email == demo_email).first()
             if not exists:
-                demo = models.User(email=demo_email, password_hash=hash_password(pwd))
+                demo = models.User(email=demo_email, password_hash=hash_password(pwd), is_admin=admin_flag)
                 db.add(demo)
         db.commit()
     except Exception:
@@ -115,3 +120,46 @@ def auth_logs(request: Request, lines: int = 50):
     if not api_key or api_key != settings.admin_api_key:
         raise HTTPException(status_code=403, detail="Forbidden")
     return tail_auth_log(lines)
+
+
+def _require_admin_key(request: Request):
+    api_key = request.headers.get("X-Admin-Key")
+    if not api_key or api_key != settings.admin_api_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
+@router.get("/users", response_model=list[schemas.UserRead])
+def list_users_admin(request: Request, db: Session = Depends(get_db)):
+    _require_admin_key(request)
+    return db.query(models.User).all()
+
+
+class PasswordUpdate(BaseException):
+    pass
+
+
+@router.post("/users/{user_id}/password")
+def set_user_password(user_id: int, request: Request, body: dict, db: Session = Depends(get_db)):
+    _require_admin_key(request)
+    new_pwd = body.get("password")
+    if not new_pwd or len(new_pwd) < 3:
+        raise HTTPException(status_code=400, detail="Password too short")
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.password_hash = hash_password(new_pwd)
+    db.commit()
+    log_auth("admin_password_reset", email=user.email, success=True)
+    return {"status": "ok"}
+
+
+@router.post("/users/{user_id}/toggle_active")
+def toggle_active(user_id: int, request: Request, db: Session = Depends(get_db)):
+    _require_admin_key(request)
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.is_active = not user.is_active
+    db.commit()
+    log_auth("admin_toggle_active", email=user.email, success=True, detail=str(user.is_active))
+    return {"status": "ok", "is_active": user.is_active}
