@@ -23,9 +23,9 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest pytest-cov coverage
-      - name: Run tests with coverage
+      - name: Run tests with coverage (enforce threshold)
         run: |
-          pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing -q
+          pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing --cov-fail-under=80 -q
       - name: Upload coverage artifact
         uses: actions/upload-artifact@v4
         with:
