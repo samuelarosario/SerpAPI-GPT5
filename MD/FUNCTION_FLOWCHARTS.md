@@ -17,12 +17,7 @@ mindmap
         _store_airline_info()
         _store_airport_info()
         _calculate_cache_age()
-      Approval Required Client
-        search_flights_with_approval()
-        approve_and_execute()
-        reject_request()
-        get_pending_requests()
-        get_usage_report()
+    // Deprecated (Sept 2025): Approval Required Client (removed)
     API Integration
       SerpAPI Client
         search_round_trip()
@@ -48,14 +43,7 @@ mindmap
         store_flight_data()
         cleanup_old_data()
         _generate_cache_key()
-    Approval System
-      API Call Monitor
-        request_api_approval()
-        log_api_call()
-        generate_usage_report()
-        _calculate_cost()
-        _load_call_history()
-        _setup_logging()
+  // Deprecated (Sept 2025): Approval System (APICallMonitor)
     Validation
       Flight Search Validator
         validate_airport_code()
@@ -186,49 +174,11 @@ graph TD
 
 ---
 
-## 🔐 Approval System Functions
+## 🔐 (Removed) Approval System Functions
 
-### Approval Workflow
+The interactive approval workflow (search_flights_with_approval, request_api_approval, approve_and_execute, cost prompts) was removed in the September 2025 consolidation. The system now performs a direct cache-first search and only calls the external API when no fresh cached data exists.
 
-```mermaid
-sequenceDiagram
-    participant User
-    participant ApprovalClient
-    participant BaseClient
-    participant Monitor
-    participant Logger
-    
-    User->>ApprovalClient: search_flights_with_approval()
-    ApprovalClient->>BaseClient: search_flights(force_api=False)
-    BaseClient-->>ApprovalClient: cache_result
-    
-    alt Cache Hit
-        ApprovalClient-->>User: return cached_data (no approval needed)
-    else Cache Miss
-        ApprovalClient->>Monitor: request_api_approval()
-        Monitor->>Monitor: _calculate_cost()
-        Monitor->>Monitor: _load_call_history()
-        Monitor->>User: display_approval_prompt()
-        User->>Monitor: user_decision
-        
-        alt User Approves
-            Monitor->>Logger: log_approved_call()
-            Monitor-->>ApprovalClient: return (True, request)
-            ApprovalClient->>ApprovalClient: store_pending_request()
-            ApprovalClient-->>User: return approval_required_response
-            
-            Note over User: User calls approve_and_execute()
-            User->>ApprovalClient: approve_and_execute(request_id)
-            ApprovalClient->>BaseClient: search_flights(force_api=True)
-            BaseClient-->>ApprovalClient: api_result
-            ApprovalClient-->>User: return final_result
-        else User Rejects
-            Monitor->>Logger: log_rejected_call()
-            Monitor-->>ApprovalClient: return (False, request)
-            ApprovalClient-->>User: return rejection_response
-        end
-    end
-```
+If future governance or quota tracking is required, implement it as a non-blocking async metrics collector rather than an inline approval gate.
 
 ### Cost Calculation Functions
 
@@ -428,23 +378,15 @@ graph TD
     CacheHit -->|Yes| Fresh{🕐 Fresh?}
     Fresh -->|Yes| Return[📤 Return Data]
     Fresh -->|No| Clean[🧹 Cleanup]
-    CacheHit -->|No| Approval[🔐 Need Approval?]
-    Clean --> Approval
-    
-    Approval --> Required{❓ Required?}
-    Required -->|Yes| Prompt[📋 Show Prompt]
-    Required -->|No| API[🌐 Call API]
-    Prompt --> Decision{👤 Approve?}
-    Decision -->|Yes| API
-    Decision -->|No| Reject[🚫 Return Rejection]
-    
+  CacheHit -->|No| Clean[🧹 Cleanup]
+  Clean --> API[🌐 Call API]
     API --> Success{✅ Success?}
     Success -->|Yes| Process[⚙️ Process Data]
-    Success -->|No| Error[❌ Return Error]
-    Process --> Store[💾 Store Results]
-    Store --> Extract[🔤 Extract IATA]
-    Extract --> UpdateRef[📊 Update References]
-    UpdateRef --> Return
+  Success -->|No| Error[❌ Return Error]
+  Process --> Store[💾 Store Results]
+  Store --> Extract[🔤 Extract IATA]
+  Extract --> UpdateRef[📊 Update References]
+  UpdateRef --> Return
     
     style User fill:#e3f2fd
     style Return fill:#c8e6c9
@@ -456,14 +398,14 @@ graph TD
 
 ```mermaid
 graph TD
-    Main[main] --> Demo[demo_flight_search_system]
-    Demo --> Client[EnhancedFlightSearchClient]
+  Main[CLI Invocation] --> Client[EnhancedFlightSearchClient]
     Client --> Search[search_flights]
     
     Search --> Validate[_validate_search_params]
     Search --> Cache[search_cache]
     Search --> API[SerpAPIFlightClient]
-    Search --> Store[store_flight_data]
+  Search --> WeekRange[search_week_range]
+  Search --> Store[store_flight_data]
     
     Cache --> GenKey[_generate_cache_key]
     Cache --> Query[Database Query]

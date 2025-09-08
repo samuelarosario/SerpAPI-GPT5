@@ -150,68 +150,20 @@ flowchart TD
 
 ---
 
-## 🔐 API Approval System Functions
+## �️ Deprecated Components
 
-### 1. `request_api_approval()` - Main Approval Function
+The prior interactive API approval & usage monitoring subsystem (APICallMonitor, ApprovalRequiredSearchClient, request_api_approval, generate_usage_report) has been **fully removed** during the September 2025 consolidation.
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant AS as APICallMonitor
-    participant U as User
-    participant L as Logger
-    
-    C->>AS: request_api_approval(params, reason)
-    AS->>AS: _load_call_history()
-    AS->>AS: _calculate_cost(params)
-    AS->>AS: _generate_search_id()
-    AS->>AS: create_approval_request()
-    
-    AS->>U: display_approval_prompt()
-    Note over U: Shows cost, usage stats, parameters
-    U->>AS: user_input (y/n)
-    
-    alt User Approves
-        AS->>L: log_approved_call()
-        AS->>AS: _update_usage_stats()
-        AS-->>C: return (True, request)
-    else User Rejects
-        AS->>L: log_rejected_call()
-        AS-->>C: return (False, request)
-    end
-```
+Rationale:
+- The cache-first search path plus tighter parameter validation made manual per-call approval redundant.
+- Added complexity (stateful pending requests, cost prompts) introduced surface area without proportional risk reduction given current usage volume.
+- Removal simplifies operational flowcharts and reduces documentation drift.
 
-**Function Details:**
-- **Purpose**: Interactive approval system for API calls with cost management
-- **Cost Calculation**: $0.05 per flight search with daily usage tracking
-- **User Interface**: Formatted prompt showing cost, usage, and parameters
-- **Logging**: Complete audit trail of all approval decisions
-- **Return**: Tuple of (should_proceed: bool, request: APICallRequest)
+Migration Guidance:
+- Use `EnhancedFlightSearchClient.search_flights()` directly (round-trip or one-way) or `search_week_range()` for aggregated weekly discovery.
+- Cost or quota governance, if reintroduced, should be implemented as a lightweight, non-interactive metrics collector outside the critical path.
 
-### 2. `generate_usage_report()` - Usage Analytics
-
-```mermaid
-flowchart TD
-    Start([Generate Report]) --> LoadHistory[Load Call History]
-    LoadHistory --> FilterToday[Filter Today's Calls]
-    FilterToday --> CountCalls[Count Total Calls]
-    CountCalls --> CalcCost[Calculate Total Cost]
-    
-    CalcCost --> GroupByType[Group by Call Type]
-    GroupByType --> CalcStats[Calculate Statistics]
-    CalcStats --> FormatReport[Format Report String]
-    
-    FormatReport --> AddTimestamp[Add Timestamp]
-    AddTimestamp --> ReturnReport[Return Formatted Report]
-    
-    ReturnReport --> End([End])
-```
-
-**Function Details:**
-- **Purpose**: Generate comprehensive usage analytics for cost tracking
-- **Metrics**: Total calls, cost breakdown, calls by type, daily trends
-- **Format**: Human-readable string with emoji formatting
-- **Time Range**: Configurable time periods (default: daily)
+Any historic references to: `request_api_approval`, `approve_and_execute`, `ApprovalRequiredSearchClient`, `APICallMonitor`, or cost prompt flows should be treated as archival and not re-implemented without a new architectural review.
 
 ---
 
@@ -399,19 +351,8 @@ flowchart LR
     Store --> Return
 ```
 
-### 2. Approval Workflow Pattern
-
-```mermaid
-flowchart LR
-    APIRequest --> CheckApproval{Approval Needed?}
-    CheckApproval -->|No| Execute[Execute API]
-    CheckApproval -->|Yes| RequestApproval[Request User Approval]
-    RequestApproval --> UserDecision{User Choice}
-    UserDecision -->|Approve| Execute
-    UserDecision -->|Reject| Cancel[Cancel Request]
-    Execute --> LogCall[Log API Call]
-    Cancel --> LogReject[Log Rejection]
-```
+### 2. (Removed) Approval Workflow Pattern
+Previously documented here. Eliminated in current architecture; cache-first path calls API directly when needed.
 
 ### 3. Database Transaction Pattern
 
@@ -434,17 +375,13 @@ graph TD
     ESC[EnhancedFlightSearchClient] --> |uses| SAC[SerpAPIFlightClient]
     ESC --> |uses| FSC[FlightSearchCache]
     ESC --> |uses| FSV[FlightSearchValidator]
-    
-    ARSC[ApprovalRequiredSearchClient] --> |wraps| ESC
-    ARSC --> |uses| ACM[APICallMonitor]
-    
-    FSC --> |uses| SADB[SerpAPIDatabase]
-    ACM --> |uses| SADB
-    
+    ESC --> |may call| WRS[search_week_range]
+
+    FSC --> |uses| DB[(SQLite Database)]
     SAC --> |uses| RL[RateLimiter]
     SAC --> |calls| SAPI[SerpAPI Service]
-    
-    SADB --> |stores in| DB[(SQLite Database)]
+
+    SessionCleanup[session_cleanup.py] --> |maintains| DB
 ```
 
 ---
@@ -456,7 +393,7 @@ graph TD
 - `search_flights()` (cache hit): 20-50ms
 - `search_flights()` (API call): 2-5 seconds
 - `store_flight_data()`: 50-200ms
-- `request_api_approval()`: User-dependent
+// Approval timing metrics removed (subsystem deprecated)
 - `cleanup_old_data()`: 100-500ms
 
 ### Database Operations
