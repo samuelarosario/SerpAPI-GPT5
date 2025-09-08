@@ -18,7 +18,9 @@ class TokenPair(BaseModel):
 
 class UserRead(BaseModel):
     id: int
-    email: EmailStr
+    # Relaxed to plain str so internal/demo accounts like 'user@local' validate.
+    # Registration still uses EmailStr (UserCreate) to enforce proper emails for real users.
+    email: str
     is_active: bool
     is_admin: bool | None = False
     created_at: datetime
