@@ -1,6 +1,17 @@
 # Changelog
 
 ## 2025-09-08
+### Web App Flight Search Integration & UI Refinements
+- Added authenticated web UI route `/flight-search` (form: origin, destination, date) and API endpoint `/api/flight_search` invoking `EnhancedFlightSearchClient` (cache-first then API) with minimal parameters.
+- Implemented singleton initialization for `EnhancedFlightSearchClient` in `WebApp/app/main.py` to prevent duplicate imports, path divergence, and metrics duplication.
+- Added resilient lazy import path adjustment (only once) to handle direct web app runs without prior PYTHONPATH configuration.
+- Introduced temporary diagnostic endpoints (`/debug/flight_searches_summary`, `/debug/efs_env`, `/debug/efs_ping`) during persistence investigation; subsequently fully removed after stabilization.
+- Enhanced structured storage reliability by ensuring pre-insert upserts for referenced airports/airlines (avoiding silent FK failures) and added post-commit verification logging (counts of inserted flight_results & segments) retained for observability.
+- Updated flight search UI result rendering: replaced raw object placeholders (`[object Object]`) with formatted cards showing route (origin→destination), price (USD), total duration (hh h mm m), stop count, and per-segment rows (dep→arr, airline+flight, times, segment minutes).
+- Commit references: `fa5422a` (logging & data write confirmation), `65885d2` (remove debug endpoints), `7fe41f0` (formatted flight search UI cards).
+- No schema changes required; database writes confirmed via existing structured storage pipeline.
+- Deferred (future): transform card grid into Google-style vertical result list with sorting & filtering (price, duration, stops), pagination/virtualization, and richer fare class display.
+
 ### Observability & Metrics Enhancements
 - Added in-memory metrics counters (api_calls, api_failures, cache_hits, cache_misses, retry_attempts, api_time_ms_total) with snapshot via `EnhancedFlightSearchClient.get_cache_stats()`.
 - Introduced structured JSON logging module (`core/structured_logging.py`) writing to `logs/flight_events.jsonl`.
