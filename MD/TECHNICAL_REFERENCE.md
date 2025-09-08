@@ -198,6 +198,12 @@ JOIN api_queries ar ON fs.search_id = ar.search_term
 WHERE fs.cache_key = ? 
   AND ar.query_timestamp > ?
 ORDER BY ar.query_timestamp DESC
+SELECT fs.*, ar.raw_response, ar.created_at
+FROM flight_searches fs
+JOIN api_queries ar ON fs.api_query_id = ar.id
+WHERE fs.cache_key = ? 
+    AND ar.created_at > ?
+ORDER BY ar.created_at DESC
 LIMIT 1
 ```
 
@@ -243,8 +249,7 @@ flowchart TD
     HasOldData -->|No| LogNoCleanup[Log: No cleanup needed]
     HasOldData -->|Yes| DeleteOldSearches[DELETE old flight_searches]
     
-    DeleteOldSearches --> DeleteOldQueries[DELETE old api_queries]
-    DeleteOldQueries --> DeleteOrphaned[DELETE orphaned records]
+    DeleteOldSearches --> DeleteOrphaned[DELETE orphaned records]
     DeleteOrphaned --> VacuumDB[VACUUM database]
     
     VacuumDB --> LogCleanup[Log cleanup results]
@@ -252,11 +257,14 @@ flowchart TD
     LogNoCleanup --> End
 ```
 
-**SQL Operations:**
+**SQL Operations (raw preserved by default):**
 ```sql
--- Delete old flight searches (>24 hours)
-DELETE FROM flight_searches 
-WHERE search_timestamp < ?
+-- Delete old flight searches (>24 hours) (structured cache only)
+DELETE FROM flight_searches WHERE created_at < ?;
+
+-- (Optional explicit raw pruning happens only via session_cleanup utility)
+-- DELETE FROM api_queries WHERE created_at < ?; -- executed ONLY when retention flags supplied
+```
 
 -- Delete old API queries (>24 hours)  
 DELETE FROM api_queries 
