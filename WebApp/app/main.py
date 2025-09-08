@@ -182,6 +182,18 @@ async def debug_flight_searches_summary(route: str | None = Query(None, descript
         except Exception: pass
     return JSONResponse(data)
 
+@app.get("/debug/efs_env", response_class=JSONResponse, tags=["debug"])
+async def debug_efs_env():  # lightweight environment probe
+    import sys, os
+    client = _get_efs_client()
+    return {
+        "cwd": os.getcwd(),
+        "efs_db_path": getattr(client, 'db_path', None),
+        "efs_module_file": getattr(type(client), '__module__', None),
+        "pythonpath_contains_db": os.path.exists(getattr(client, 'db_path', '')),
+        "sys_path_sample": sys.path[:15]
+    }
+
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
     return HTMLResponse("""<!DOCTYPE html><html><head><title>Admin</title><meta charset='utf-8'/>
