@@ -169,6 +169,42 @@ Any historic references to: `request_api_approval`, `approve_and_execute`, `Appr
 
 ## 💾 Database Functions
 
+## 🧾 Structured Event Taxonomy
+
+Event names follow dot-separated hierarchy: <domain>.<category>.<action>
+
+Domains & Examples:
+- api.* : Low-level SerpAPI interactions
+    - api.attempt (attempt number)
+    - api.success (status_code)
+    - api.retry (transient failure before next backoff)
+    - api.failed (exhausted retries)
+    - api.exception (unexpected non-RequestException error)
+- efs.search.* : High-level enhanced flight search lifecycle
+    - efs.search.start (route, cache_key)
+    - efs.search.success (source=cache|api, duration_ms)
+    - efs.search.error (validation or API failure)
+- efs.cache.* : Cache decision points
+    - efs.cache.hit (search_id)
+    - efs.cache.miss (cache_key)
+- efs.api.request : API invocation initiated (pre-call)
+- migration.* : (Future) schema changes, e.g. migration.apply, migration.error
+
+Payload Conventions:
+- search_id: unique request scope id
+- cache_key: deterministic hash over normalized parameters
+- attempt: 1-based retry counter
+- duration_ms: wall time duration of operation
+- error: concise error string or exception message
+
+Logging Channels:
+- Structured JSON lines: logs/flight_events.jsonl
+- Classic rotating file: logs/flight_system.log
+
+Future Extensions (P2/P3):
+- Add migration.* events when new migrations added
+- Add metrics.export.* for external sink operations
+
 ### 1. `FlightSearchCache.search_cache()` - Cache Lookup
 
 ```mermaid
@@ -190,24 +226,21 @@ flowchart TD
     ReturnData --> End
 ```
 
-**SQL Query Used:**
+**Canonical Cache SQL (current):**
 ```sql
-SELECT fs.*, ar.raw_response, ar.query_timestamp
+SELECT fs.*, COUNT(fr.id) AS flight_count
 FROM flight_searches fs
-JOIN api_queries ar ON fs.search_id = ar.search_term
-WHERE fs.cache_key = ? 
-  AND ar.query_timestamp > ?
-ORDER BY ar.query_timestamp DESC
-SELECT fs.*, ar.raw_response, ar.created_at
-FROM flight_searches fs
-JOIN api_queries ar ON fs.api_query_id = ar.id
-WHERE fs.cache_key = ? 
-    AND ar.created_at > ?
-ORDER BY ar.created_at DESC
-LIMIT 1
+LEFT JOIN flight_results fr ON fs.search_id = fr.search_id
+WHERE fs.cache_key = ?
+    AND fs.created_at > ?
+GROUP BY fs.search_id
+ORDER BY fs.created_at DESC
+LIMIT 1;
 ```
 
-### 2. `store_flight_data()` - Data Persistence
+Raw response retrieval now performed indirectly by associating `api_query_id` when structured data is stored. Direct joins on raw table are intentionally avoided in the hot cache path for speed.
+
+### 2. `_store_structured_data()` - Data Persistence
 
 ```mermaid
 flowchart TD
@@ -257,22 +290,20 @@ flowchart TD
     LogNoCleanup --> End
 ```
 
-**SQL Operations (raw preserved by default):**
+**Structured Cleanup (raw preserved by default):**
 ```sql
--- Delete old flight searches (>24 hours) (structured cache only)
-DELETE FROM flight_searches WHERE created_at < ?;
+-- Identify expired searches
+SELECT search_id FROM flight_searches WHERE created_at < :cutoff;
 
--- (Optional explicit raw pruning happens only via session_cleanup utility)
--- DELETE FROM api_queries WHERE created_at < ?; -- executed ONLY when retention flags supplied
-```
+-- Cascade deletes (application-controlled ordering)
+DELETE FROM layovers WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = :sid);
+DELETE FROM flight_segments WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = :sid);
+DELETE FROM flight_results WHERE search_id = :sid;
+DELETE FROM price_insights WHERE search_id = :sid;
+DELETE FROM flight_searches WHERE search_id = :sid;
 
--- Delete old API queries (>24 hours)  
-DELETE FROM api_queries 
-WHERE query_timestamp < ?
-
--- Clean up orphaned records
-DELETE FROM flight_results 
-WHERE search_id NOT IN (SELECT search_id FROM flight_searches)
+-- Raw pruning only when explicitly requested
+-- DELETE FROM api_queries WHERE created_at < :cutoff; -- (conditional)
 ```
 
 ---

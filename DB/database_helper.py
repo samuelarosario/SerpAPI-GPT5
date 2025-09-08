@@ -96,6 +96,24 @@ class SerpAPIDatabase:
             if not row:
                 cur.execute("INSERT INTO schema_version (id, version, applied_at) VALUES (1, ?, ?)", ("2025.09.08-baseline", datetime.now().isoformat()))
                 conn.commit()
+            # Initialize migration history registry if not present
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS migration_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version TEXT NOT NULL,
+                    applied_at TEXT NOT NULL,
+                    description TEXT,
+                    checksum TEXT
+                )
+            """)
+            # Ensure baseline row exists in history
+            cur.execute("SELECT 1 FROM migration_history WHERE version=?", ("2025.09.08-baseline",))
+            if not cur.fetchone():
+                cur.execute(
+                    "INSERT INTO migration_history (version, applied_at, description, checksum) VALUES (?,?,?,?)",
+                    ("2025.09.08-baseline", datetime.now().isoformat(), "Baseline post legacy column removal", None)
+                )
+                conn.commit()
         except Exception:
             pass
         finally:
