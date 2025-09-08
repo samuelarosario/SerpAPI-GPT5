@@ -7,24 +7,27 @@ import pathlib
 from WebApp.app.auth.routes import router as auth_router
 # Lazy import helper for EnhancedFlightSearchClient to avoid modifying existing EFS modules
 import sys, os, logging
+_EFS_SINGLETON = None  # module-level cache
 def _get_efs_client():
+    global _EFS_SINGLETON
+    if _EFS_SINGLETON is not None:
+        return _EFS_SINGLETON
     try:
         from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
-    except ModuleNotFoundError as e:
-        # Ensure project root and its 'Main' subdirectory are on sys.path so nested 'core' import resolves
+    except ModuleNotFoundError:
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
         main_dir = os.path.join(project_root, 'Main')
         modified = False
         if project_root not in sys.path:
-            sys.path.append(project_root)
-            modified = True
+            sys.path.append(project_root); modified = True
         if main_dir not in sys.path and os.path.isdir(main_dir):
-            sys.path.append(main_dir)
-            modified = True
+            sys.path.append(main_dir); modified = True
         if modified:
             logging.getLogger(__name__).warning("Adjusted sys.path for EFS import: %s", [p for p in (project_root, main_dir)])
         from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
-    return EnhancedFlightSearchClient()
+    _EFS_SINGLETON = EnhancedFlightSearchClient()
+    logging.getLogger(__name__).info("Initialized EFS singleton using db_path=%s", getattr(_EFS_SINGLETON, 'db_path', None))
+    return _EFS_SINGLETON
 
 app = FastAPI(title="SerpAPI Flight WebApp", version="0.1.0")
 
@@ -193,6 +196,26 @@ async def debug_efs_env():  # lightweight environment probe
         "pythonpath_contains_db": os.path.exists(getattr(client, 'db_path', '')),
         "sys_path_sample": sys.path[:15]
     }
+
+@app.get("/debug/efs_ping", response_class=JSONResponse, tags=["debug"])
+async def debug_efs_ping():
+    """Quick check: confirms singleton, db accessibility, and table count (lightweight)."""
+    import sqlite3, os
+    client = _get_efs_client()
+    db_path = getattr(client, 'db_path', None)
+    out = {"singleton": True, "db_path": db_path, "exists": bool(db_path and os.path.exists(db_path))}
+    if out["exists"]:
+        try:
+            con = sqlite3.connect(db_path)
+            cur = con.cursor()
+            cur.execute("SELECT COUNT(*) FROM flight_searches")
+            out["flight_searches_count"] = cur.fetchone()[0]
+        except Exception as e:
+            out["error"] = str(e)
+        finally:
+            try: con.close()
+            except Exception: pass
+    return out
 
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])
 async def admin_portal(request: Request):
