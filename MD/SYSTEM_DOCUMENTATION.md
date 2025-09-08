@@ -45,8 +45,7 @@ Database schema changes are **STRICTLY PROHIBITED** unless explicitly double-con
 ```mermaid
 graph TB
     User[👤 User] --> UI[🖥️ User Interface]
-    UI --> Approval[🔐 API Approval System]
-    Approval --> Cache[💾 Local Cache Check]
+    UI --> Cache[💾 Local Cache Check]
     Cache --> |Hit| Return[📤 Return Cached Data]
     Cache --> |Miss| API[🌐 SerpAPI Call]
     API --> Store[💾 Store Data]
@@ -71,23 +70,22 @@ graph TB
 
 ---
 
-## 🧩 Core Components
+## 🧩 Core Components (Current)
 
-### 1. Enhanced Flight Search Client
-**File:** `Main/enhanced_flight_search.py`
-**Purpose:** Main search orchestrator with intelligent caching
+### Enhanced Flight Search Client
+`Main/enhanced_flight_search.py` – Unified search, cache-first, week range support, structured storage.
 
-### 2. API Approval System
-**File:** `Main/api_approval_system.py`
-**Purpose:** Cost management and usage tracking
+### Flight Search Cache
+`Main/cache.py` – Cache key generation, lookup, cleanup (24h TTL).
 
-### 3. Database Management
-**File:** `DB/database_helper.py`
-**Purpose:** Data persistence and retrieval
+### Database Helper (Legacy Support)
+`DB/database_helper.py` – Underlying DB utilities (some legacy functions retained for reference).
 
-### 4. SerpAPI Client
-**File:** `Main/serpapi_client.py`
-**Purpose:** Direct API communication
+### SerpAPI Client
+`Main/serpapi_client.py` – Secure SerpAPI integration.
+
+### Deprecated (Removed) Components
+`api_approval_system.py`, `simple_api_approval.py`, `approved_flight_search.py`, demo scripts, analyzer modules – removed; see `DOC_DRIFT_MATRIX.md`.
 
 ---
 
@@ -109,17 +107,7 @@ flowchart TD
     CacheHit --> |No| NeedAPI[🌐 Need API Call]
     CleanCache --> NeedAPI
     
-    NeedAPI --> ForceAPI{⚡ Force API?}
-    ForceAPI --> |No| CheckApproval[🔐 Check Approval System]
-    ForceAPI --> |Yes| MakeAPI[📞 Make API Call]
-    
-    CheckApproval --> ApprovalNeeded{❓ Approval Required?}
-    ApprovalNeeded --> |Yes| RequestApproval[📋 Request User Approval]
-    ApprovalNeeded --> |No| MakeAPI
-    
-    RequestApproval --> UserDecision{👤 User Decision}
-    UserDecision --> |Approve| MakeAPI
-    UserDecision --> |Reject| RejectReturn[🚫 Return Rejection]
+    NeedAPI --> MakeAPI[📞 Make API Call]
     
     MakeAPI --> APISuccess{✅ API Success?}
     APISuccess --> |Yes| StoreData[💾 Store in Database]
@@ -133,7 +121,6 @@ flowchart TD
     ReturnCache --> End([📋 End])
     ReturnSuccess --> End
     ErrorReturn --> End
-    RejectReturn --> End
     APIError --> End
 ```
 
@@ -164,29 +151,8 @@ flowchart TD
     ReturnMiss --> End
 ```
 
-### 3. API Approval System Flow
-
-```mermaid
-flowchart TD
-    Start([📞 API Call Requested]) --> CheckUsage[📊 Check Daily Usage]
-    CheckUsage --> CalcCost[💰 Calculate Estimated Cost]
-    CalcCost --> GenRequest[📋 Generate Approval Request]
-    
-    GenRequest --> ShowPrompt{🖥️ Show Approval Prompt}
-    ShowPrompt --> UserInput[👤 User Input]
-    
-    UserInput --> Approve{✅ User Approves?}
-    Approve --> |Yes| LogApproval[📝 Log Approval]
-    Approve --> |No| LogRejection[📝 Log Rejection]
-    
-    LogApproval --> IncrementUsage[📈 Increment Usage Counter]
-    IncrementUsage --> ReturnApproved[✅ Return Approved]
-    
-    LogRejection --> ReturnRejected[🚫 Return Rejected]
-    
-    ReturnApproved --> End([📋 End])
-    ReturnRejected --> End
-```
+### (Removed) API Approval Flow
+The previous interactive approval & cost control layer has been deprecated. All searches now proceed directly after validation using cache-first logic.
 
 ### 4. Data Storage and Processing Flow
 
