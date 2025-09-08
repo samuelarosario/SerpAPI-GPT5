@@ -1,6 +1,6 @@
 # SerpAPI Flight Data System
 
-![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg) ![Status](https://img.shields.io/badge/status-stable-success.svg) ![Tests](https://raw.githubusercontent.com/samuelarosario/SerpAPI-V3/master/badges/tests.json)
+![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg) ![Status](https://img.shields.io/badge/status-stable-success.svg) ![Tests](https://raw.githubusercontent.com/samuelarosario/SerpAPI-V3/master/badges/tests.json) ![Coverage](https://raw.githubusercontent.com/samuelarosario/SerpAPI-V3/master/badges/coverage.json)
 
 Release v0.3.0: import path stabilization, metrics singleton guard, schema checksum + CLI JSON/force enhancements.
 See CHANGELOG for details.

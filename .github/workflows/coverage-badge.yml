@@ -1,0 +1,50 @@
+name: coverage-badge
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [ '3.11', '3.12', '3.13' ]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+            python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install pytest pytest-cov coverage
+      - name: Run tests with coverage
+        run: |
+          pytest --cov=. --cov-report=xml:coverage.xml --cov-report=term-missing -q || true
+          echo "Generated coverage.xml"
+      - name: Generate coverage badge (only once on 3.13)
+        if: matrix.python-version == '3.13' && github.ref == 'refs/heads/master'
+        run: |
+          pct=$(grep -Po 'line-rate="\K[0-9.]+(?=")' coverage.xml | head -1)
+          if [ -z "$pct" ]; then pct=0; fi
+          percent=$(python -c "import sys;print(int(round(float(sys.argv[1])*100)))" "$pct")
+          echo "Coverage percent: ${percent}% (raw=$pct)"
+          color=brightgreen
+            
+          if [ $percent -lt 90 ]; then color=green; fi
+          if [ $percent -lt 80 ]; then color=yellow; fi
+          if [ $percent -lt 70 ]; then color=orange; fi
+          if [ $percent -lt 60 ]; then color=red; fi
+          json=$(jq -n --arg label "coverage" --arg message "${percent}%" --arg color "$color" '{schemaVersion:1,label:$label,message:$message,color:$color}')
+          mkdir -p badges
+          echo "$json" > badges/coverage.json
+          git config user.name "ci-bot"
+          git config user.email "ci-bot@users.noreply.github.com"
+          git add badges/coverage.json || true
+          if git diff --cached --quiet; then echo "No coverage badge changes"; else git commit -m "ci: update coverage badge"; git push; fi
