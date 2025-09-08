@@ -84,11 +84,29 @@ Use the provided script to prune expired cached structured search data while pre
 python Main/session_cleanup.py --cache-age-hours 24 --orphans --vacuum --json
 ```
 
+Force pruning of raw API rows aligned to the same cache-age cutoff (advanced / irreversible):
+
+```powershell
+python Main/session_cleanup.py --cache-age-hours 24 --prune-raw-cache-age --json
+```
+
+Target raw retention independent of cache-age (e.g. keep only last 30 days raw):
+
+```powershell
+python Main/session_cleanup.py --raw-retention-days 30 --json
+```
+
 Raw data (api_queries) is NEVER deleted by automatic cache maintenance; only removed when you explicitly set a retention:
 
 ```powershell
 # Keep only last 7 days of raw queries (irreversible)
 python Main/session_cleanup.py --raw-retention-days 7
+```
+
+Or prune raw in the same pass as structured cache window:
+
+```powershell
+python Main/session_cleanup.py --cache-age-hours 12 --prune-raw-cache-age
 ```
 
 To run automatically when closing a dev session you can create a VS Code task and invoke it manually before exit, or add a PowerShell profile snippet:

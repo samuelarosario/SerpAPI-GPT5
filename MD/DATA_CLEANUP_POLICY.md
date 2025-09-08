@@ -67,6 +67,15 @@ self.cache.cleanup_old_data(max_cache_age_hours=24)  # raw retained
 python Main/session_cleanup.py --raw-retention-days 30  # removes api_queries older than 30 days
 ```
 
+### **Optional Raw Prune (cache-age aligned shortcut):**
+Use when you want raw data trimmed to the same freshness horizon as structured cache without specifying days explicitly:
+
+```bash
+python Main/session_cleanup.py --cache-age-hours 24 --prune-raw-cache-age
+```
+
+This deletes raw `api_queries` older than the computed cutoff (hours). Prefer `--raw-retention-days` for long-term retention policies; use `--prune-raw-cache-age` sparingly for space reclamation scenarios.
+
 ### **Foreign Key Protection:**
 - Deletion follows **proper order** to respect foreign key constraints
 - **Reference tables preserved** (airports, airlines)
