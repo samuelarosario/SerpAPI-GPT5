@@ -16,7 +16,7 @@ _MIGRATED: set[str] = set()  # process-level cache of migrated db paths
 class SerpAPIDatabase:
     """Encapsulates SQLite operations, migrations, and integrity utilities."""
 
-    def __init__(self, db_path: str = "Main_DB.db", enable_wal: bool = True) -> None:
+    def __init__(self, db_path: str = "DB/Main_DB.db", enable_wal: bool = True) -> None:
         self.db_path = db_path
         self.enable_wal = enable_wal
 
