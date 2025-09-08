@@ -139,6 +139,7 @@ def main():
         'raw_retention_days': args.raw_retention_days,
         'dry_run': args.dry_run
     }
+    exit_code = 0
     try:
         summary['cache_prune'] = prune_search_cache(args.cache_age_hours, dry_run=args.dry_run)
         if args.raw_retention_days > 0:
@@ -146,7 +147,6 @@ def main():
         elif args.prune_raw_cache_age:
             # derive cutoff in days (floor >=1 if hours >=24) else treat as fractional days for reporting
             hours = args.cache_age_hours
-            # Use hours directly by converting to timedelta comparison (custom inline logic)
             cutoff = datetime.now() - timedelta(hours=hours)
             with _connect() as conn:
                 cur = conn.cursor()
@@ -164,19 +164,18 @@ def main():
             summary['orphans'] = remove_orphans(dry_run=args.dry_run)
         if args.vacuum:
             summary['vacuum'] = vacuum(dry_run=args.dry_run)
-    except Exception as e:
+    except Exception as e:  # capture unexpected errors but still emit structured summary
         summary['error'] = str(e)
+        exit_code = 1
         if not args.json:
             print("ERROR:", e)
-        print(json.dumps(summary, indent=2))
-    raise SystemExit(1) from None
-
+    # Emit output
     if args.json:
         print(json.dumps(summary, indent=2))
     else:
         print("Session Cleanup Summary")
         print(json.dumps(summary, indent=2))
-    raise SystemExit(0)
+    raise SystemExit(exit_code)
 
 if __name__ == '__main__':
     main()

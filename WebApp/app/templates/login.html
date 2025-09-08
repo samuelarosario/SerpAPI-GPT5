@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - Flight WebApp</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui,-apple-system,Segoe UI,Roboto,sans-serif; margin:0; padding:0; display:flex; min-height:100vh; align-items:center; justify-content:center; background:linear-gradient(135deg,#e0f2ff,#bcdfff); color:#1e3a5f; }
+    .card { background:rgba(255,255,255,0.85); backdrop-filter: blur(10px); padding:2rem 2.5rem; border-radius:14px; width:100%; max-width:380px; box-shadow:0 4px 24px -4px rgba(0,64,128,.25); border:1px solid #d0e8ff; }
+    h1 { margin:0 0 1.25rem; font-size:1.45rem; letter-spacing:.5px; color:#134e9b; text-align:center; }
+    label { font-size:.7rem; text-transform:uppercase; letter-spacing:1px; font-weight:600; color:#2563eb; }
+    input { width:100%; padding:.75rem .85rem; margin:.45rem 0 1rem; border:1px solid #93c5fd; border-radius:8px; background:#f1f9ff; color:#0f2747; font-size:.9rem; transition:border .2s, box-shadow .2s; }
+    input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.35); }
+    button { width:100%; padding:.9rem 1rem; border:none; border-radius:8px; font-weight:600; background:#3b82f6; color:#fff; cursor:pointer; font-size:.9rem; letter-spacing:.5px; box-shadow:0 3px 10px -2px rgba(59,130,246,.5); transition:background .2s, transform .1s; }
+    button:hover { background:#2563eb; }
+    button:active { transform:translateY(1px); }
+    .error { background:#dc2626; color:#fff; padding:.6rem .75rem; border-radius:6px; font-size:.75rem; margin-bottom:1rem; display:none; }
+    .success { background:#059669; color:#fff; padding:.6rem .75rem; border-radius:6px; font-size:.75rem; margin-bottom:1rem; display:none; }
+    .links { margin-top:1rem; text-align:center; }
+    .links a { color:#1d4ed8; font-size:.7rem; text-decoration:none; margin:0 .35rem; }
+    .links a:hover { text-decoration:underline; }
+    footer { margin-top:1.25rem; text-align:center; font-size:.6rem; color:#4b5563; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Flight WebApp Login</h1>
+    <div id="error" class="error"></div>
+    <div id="success" class="success"></div>
+    <form id="loginForm">
+      <label for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="username" required />
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required />
+      <button type="submit">Sign In</button>
+    </form>
+    <div class="links">
+      <a href="#" id="registerLink">Need an account? Register</a>
+    </div>
+    <footer>JWT auth demo • Secure endpoints coming next</footer>
+  </div>
+<script>
+const form = document.getElementById('loginForm');
+const errBox = document.getElementById('error');
+const okBox = document.getElementById('success');
+const registerLink = document.getElementById('registerLink');
+
+async function api(path, method='GET', body) {
+  const res = await fetch(path, {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined
+  });
+  let data;
+  try { data = await res.json(); } catch { data = {}; }
+  if(!res.ok) throw new Error(data.detail || 'Request failed');
+  return data;
+}
+
+function show(el, msg) { el.textContent = msg; el.style.display='block'; }
+function hide(el) { el.style.display='none'; }
+
+registerLink.addEventListener('click', async (e) => {
+  e.preventDefault();
+  hide(errBox); hide(okBox);
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if(!email || !password) { show(errBox,'Enter email & password first'); return; }
+  try {
+    await api('/auth/register','POST',{email,password});
+    show(okBox,'Registration successful. You can now log in.');
+  } catch(err){ show(errBox, err.message); }
+});
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  hide(errBox); hide(okBox);
+  const email = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  if(!email || !password) { show(errBox,'Email & password required'); return; }
+  try {
+  const tokens = await api('/auth/login','POST',{email,password});
+  show(okBox,'Login OK. Redirecting...');
+  localStorage.setItem('access_token', tokens.access_token);
+  localStorage.setItem('refresh_token', tokens.refresh_token);
+  setTimeout(()=>{ window.location = '/dashboard?token=' + encodeURIComponent(tokens.access_token); }, 400);
+  } catch(err){ show(errBox, err.message); }
+});
+</script>
+</body>
+</html>
