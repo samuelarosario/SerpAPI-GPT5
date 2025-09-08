@@ -39,17 +39,16 @@ CREATE TABLE airports (
 );
 
 CREATE TABLE api_queries (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                query_timestamp TEXT NOT NULL,
-                query_parameters TEXT,
-                raw_response TEXT NOT NULL,
-                query_type TEXT,
-                status_code INTEGER,
-                response_size INTEGER,
-                api_endpoint TEXT,
-                search_term TEXT,
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-            );
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_parameters TEXT,
+    raw_response TEXT NOT NULL,
+    query_type TEXT,
+    status_code INTEGER,
+    response_size INTEGER,
+    api_endpoint TEXT,
+    search_term TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 
 CREATE TABLE database_metadata (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -212,10 +211,6 @@ CREATE INDEX idx_layovers_airport ON layovers(airport_code);
 CREATE INDEX idx_layovers_result_id ON layovers(flight_result_id);
 
 CREATE INDEX idx_price_insights_search_id ON price_insights(search_id);
-
-CREATE INDEX idx_query_timestamp 
-            ON api_queries(query_timestamp)
-        ;
 
 CREATE INDEX idx_query_type 
             ON api_queries(query_type)

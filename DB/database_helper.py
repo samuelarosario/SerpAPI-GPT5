@@ -5,8 +5,13 @@ Provides utilities for interacting with Main_DB.db
 
 import sqlite3
 import json
+import os
+import logging
 from datetime import datetime
 from typing import Optional, Dict, List, Any
+
+# Track migrated databases to avoid repeated work per process
+_MIGRATED: set[str] = set()
 
 class SerpAPIDatabase:
     """Helper class for SerpAPI database operations"""
@@ -22,7 +27,99 @@ class SerpAPIDatabase:
             conn.execute("PRAGMA foreign_keys=ON")
         except Exception:
             pass
+        # Automated migration: if legacy query_timestamp column still present, migrate
+        self._ensure_migration(conn)
+        # Ensure schema version manifest exists
+        self._ensure_schema_version(conn)
         return conn
+
+    def _ensure_migration(self, conn: sqlite3.Connection):
+        """Drop legacy query_timestamp column from api_queries if still present.
+
+        Safe / idempotent: No action if column already removed. Operates inside
+        existing connection prior to usage. Minimal locking: per-process path cache.
+        """
+        path_key = os.path.abspath(self.db_path)
+        if path_key in _MIGRATED:
+            return
+        cur = conn.cursor()
+        try:
+            cur.execute("PRAGMA table_info(api_queries)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'query_timestamp' not in cols:
+                _MIGRATED.add(path_key)
+                return
+            # Perform in-place style migration (SQLite requires table rebuild)
+            cur.execute("BEGIN TRANSACTION")
+            cur.execute("""
+                CREATE TABLE api_queries_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_parameters TEXT,
+                    raw_response TEXT NOT NULL,
+                    query_type TEXT,
+                    status_code INTEGER,
+                    response_size INTEGER,
+                    api_endpoint TEXT,
+                    search_term TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            cur.execute(
+                """INSERT INTO api_queries_new 
+                    (id, query_parameters, raw_response, query_type, status_code, response_size, api_endpoint, search_term, created_at)
+                    SELECT id, query_parameters, raw_response, query_type, status_code, response_size, api_endpoint, search_term, 
+                           COALESCE(created_at, query_timestamp) FROM api_queries"""
+            )
+            cur.execute("DROP TABLE api_queries")
+            cur.execute("ALTER TABLE api_queries_new RENAME TO api_queries")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_created_at ON api_queries(created_at)")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_query_type ON api_queries(query_type)")
+            conn.commit()
+            _MIGRATED.add(path_key)
+            print("🔄 Automated migration: removed legacy query_timestamp column from api_queries")
+        except Exception as e:
+            conn.rollback()
+            print(f"⚠️ Automated migration failed (continuing with legacy schema): {e}")
+        finally:
+            cur.close()
+
+    def _ensure_schema_version(self, conn: sqlite3.Connection):
+        """Create and initialize schema_version table if missing.
+
+        Records baseline version post legacy column removal & observability P1.
+        """
+        cur = conn.cursor()
+        try:
+            cur.execute("CREATE TABLE IF NOT EXISTS schema_version (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, applied_at TEXT NOT NULL)")
+            cur.execute("SELECT version FROM schema_version WHERE id=1")
+            row = cur.fetchone()
+            if not row:
+                cur.execute("INSERT INTO schema_version (id, version, applied_at) VALUES (1, ?, ?)", ("2025.09.08-baseline", datetime.now().isoformat()))
+                conn.commit()
+        except Exception:
+            pass
+        finally:
+            cur.close()
+
+    def get_schema_version(self) -> Optional[str]:
+        """Return current schema version string or None if unavailable."""
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cur = conn.cursor()
+            cur.execute("SELECT version FROM schema_version WHERE id=1")
+            row = cur.fetchone()
+            return row[0] if row else None
+        except Exception:
+            return None
+        finally:
+            try:
+                cur.close()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
     
     def insert_api_response(self, 
                           query_parameters: Dict[str, Any],
@@ -51,18 +148,16 @@ class SerpAPIDatabase:
         
         try:
             # Prepare data
-            # Legacy: Both query_timestamp and created_at exist; created_at is authoritative for freshness.
-            query_timestamp = datetime.now().isoformat()
+            # Post-migration: query_timestamp column removed; created_at default handles capture.
             query_params_json = json.dumps(query_parameters) if query_parameters else "{}"
             response_size = len(raw_response.encode('utf-8'))
             
             # Insert data
             cursor.execute('''
                 INSERT INTO api_queries 
-                (query_timestamp, query_parameters, raw_response, query_type, 
-                 status_code, response_size, api_endpoint, search_term)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (query_timestamp, query_params_json, raw_response, query_type,
+                (query_parameters, raw_response, query_type, status_code, response_size, api_endpoint, search_term)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (query_params_json, raw_response, query_type,
                   status_code, response_size, api_endpoint, search_term))
             
             record_id = cursor.lastrowid
@@ -71,11 +166,11 @@ class SerpAPIDatabase:
             self._update_metadata(cursor)
             
             conn.commit()
-            print(f"✅ API response saved to database. Record ID: {record_id}")
+            logging.getLogger(__name__).info(f"Inserted api_queries record id={record_id}")
             return record_id
             
         except sqlite3.Error as e:
-            print(f"❌ Error inserting API response: {e}")
+            logging.getLogger(__name__).error(f"Error inserting API response: {e}")
             conn.rollback()
             raise
         
@@ -139,7 +234,7 @@ class SerpAPIDatabase:
             return results
             
         except sqlite3.Error as e:
-            print(f"❌ Error retrieving API responses: {e}")
+            logging.getLogger(__name__).error(f"Error retrieving API responses: {e}")
             raise
         
         finally:
@@ -190,7 +285,7 @@ class SerpAPIDatabase:
             return stats
             
         except sqlite3.Error as e:
-            print(f"❌ Error getting database stats: {e}")
+            logging.getLogger(__name__).error(f"Error getting database stats: {e}")
             raise
         
         finally:
