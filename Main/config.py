@@ -3,8 +3,9 @@ Configuration settings for SerpAPI Flight Data System
 """
 
 import os
+from typing import Any
+
 from dotenv import load_dotenv
-from typing import Dict, Any
 
 # SerpAPI Configuration
 SERPAPI_CONFIG = {
@@ -86,7 +87,7 @@ def get_api_key() -> str:
         )
     return api_key
 
-def validate_config() -> Dict[str, Any]:
+def validate_config() -> dict[str, Any]:
     """Validate configuration and return status"""
     issues = []
     

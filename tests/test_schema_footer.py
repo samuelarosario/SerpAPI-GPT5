@@ -1,4 +1,5 @@
-import re, os, pathlib
+import pathlib
+import re
 
 SCHEMA_PATH = pathlib.Path(__file__).parent.parent / 'DB' / 'current_schema.sql'
 

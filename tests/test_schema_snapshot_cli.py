@@ -1,4 +1,7 @@
-import subprocess, sys, pathlib, re
+import pathlib
+import re
+import subprocess
+import sys
 
 ROOT = pathlib.Path(__file__).parent.parent
 DBHELPER = ROOT / 'DB' / 'database_helper.py'
@@ -22,7 +25,8 @@ def test_cli_checksum_matches_snapshot():
 
 def test_cli_snapshot_refuses_temp_table(monkeypatch, tmp_path):
     # Copy DB to temp and add a forbidden table name, then invoke snapshot
-    import shutil, sqlite3
+    import shutil
+    import sqlite3
     src_db = ROOT / 'DB' / 'Main_DB.db'
     dst_db = tmp_path / 'temp.db'
     shutil.copyfile(src_db, dst_db)

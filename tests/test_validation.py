@@ -1,11 +1,14 @@
+import pathlib
+import sys
 import unittest
 from datetime import date, timedelta
-import sys, os, pathlib
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_DIR = ROOT / 'Main'
 if str(MAIN_DIR) not in sys.path:
     sys.path.append(str(MAIN_DIR))
 from core.common_validation import FlightSearchValidator, parse_price  # type: ignore
+
 
 class TestValidation(unittest.TestCase):
     def test_validate_date_format(self):

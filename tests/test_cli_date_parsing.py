@@ -1,5 +1,5 @@
-import os, sys
-from datetime import date as _date
+import os
+import sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 MAIN_DIR = os.path.join(ROOT, 'Main')

@@ -1,4 +1,10 @@
-import json, subprocess, sys, pathlib, sqlite3, shutil, tempfile
+import json
+import pathlib
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).parent.parent
 DBHELPER = ROOT / 'DB' / 'database_helper.py'

@@ -11,15 +11,16 @@ Status:
 Raw data + structured persistence pipeline lives in enhanced_flight_search.py.
 """
 from warnings import warn as _warn
+
 _warn(DeprecationWarning("flight_processor module is deprecated; use EnhancedFlightSearchClient instead."), stacklevel=2)
 
-import sqlite3
 import json
 import logging
-from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
 import os
+import sqlite3
 import sys
+from datetime import datetime
+from typing import Any
 
 # Add DB directory to path for imports
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'DB'))
@@ -43,7 +44,7 @@ class FlightDataProcessor:
         self.logger = logging.getLogger(__name__)
         self.serpapi_db = SerpAPIDatabase(db_path)
     
-    def process_search_response(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
+    def process_search_response(self, search_result: dict[str, Any]) -> dict[str, Any]:
         """
         Process complete search response and store all data
         
@@ -97,7 +98,7 @@ class FlightDataProcessor:
             processing_stats['errors'].append(str(e))
             return processing_stats
     
-    def _store_raw_api_data(self, search_result: Dict[str, Any]) -> int:
+    def _store_raw_api_data(self, search_result: dict[str, Any]) -> int:
         """Store raw API data using existing database helper"""
         
         query_params = search_result['search_parameters']
@@ -115,8 +116,8 @@ class FlightDataProcessor:
             search_term=search_term
         )
     
-    def _store_flight_search(self, search_id: str, params: Dict[str, Any], 
-                           response: Dict[str, Any], api_record_id: int):
+    def _store_flight_search(self, search_id: str, params: dict[str, Any], 
+                           response: dict[str, Any], api_record_id: int):
         """Store flight search record"""
         
         conn = sqlite3.connect(self.db_path)
@@ -171,7 +172,7 @@ class FlightDataProcessor:
         finally:
             conn.close()
     
-    def _process_flight_results(self, search_id: str, response: Dict[str, Any]) -> Dict[str, int]:
+    def _process_flight_results(self, search_id: str, response: dict[str, Any]) -> dict[str, int]:
         """Process flight results and store in database"""
         
         flights_processed = 0
@@ -190,7 +191,7 @@ class FlightDataProcessor:
         
         return {'flights_processed': flights_processed}
     
-    def _store_flight_result(self, search_id: str, flight_data: Dict[str, Any], 
+    def _store_flight_result(self, search_id: str, flight_data: dict[str, Any], 
                            result_type: str, rank: int):
         """Store individual flight result"""
         
@@ -245,7 +246,7 @@ class FlightDataProcessor:
             conn.close()
     
     def _store_flight_segment(self, cursor, flight_result_id: int, 
-                            segment: Dict[str, Any], order: int):
+                            segment: dict[str, Any], order: int):
         """Store individual flight segment"""
         
         departure_airport = segment.get('departure_airport', {})
@@ -286,7 +287,7 @@ class FlightDataProcessor:
         """, segment_data)
     
     def _store_layover(self, cursor, flight_result_id: int, 
-                      layover: Dict[str, Any], order: int):
+                      layover: dict[str, Any], order: int):
         """Store layover information"""
         
         layover_data = (
@@ -305,7 +306,7 @@ class FlightDataProcessor:
             VALUES (?, ?, ?, ?, ?, ?)
         """, layover_data)
     
-    def _extract_airlines(self, response: Dict[str, Any]) -> int:
+    def _extract_airlines(self, response: dict[str, Any]) -> int:
         """Extract and store airline information"""
         
         airlines_stored = 0
@@ -353,7 +354,7 @@ class FlightDataProcessor:
             VALUES (?, ?, ?, ?)
         """, airline_data)
     
-    def _store_price_insights(self, search_id: str, response: Dict[str, Any]):
+    def _store_price_insights(self, search_id: str, response: dict[str, Any]):
         """Store price insights data"""
         
         if 'price_insights' not in response:
@@ -388,7 +389,7 @@ class FlightDataProcessor:
         finally:
             conn.close()
     
-    def _update_route_analytics(self, params: Dict[str, Any], response: Dict[str, Any]):
+    def _update_route_analytics(self, params: dict[str, Any], response: dict[str, Any]):
         """Update route analytics data"""
         
         departure_id = params.get('departure_id')

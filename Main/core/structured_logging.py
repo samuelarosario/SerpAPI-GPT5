@@ -4,8 +4,14 @@ Environment variable FLIGHT_JSON_LOG can override default path.
 Non-fatal on I/O errors.
 """
 from __future__ import annotations
-import os, json, threading, datetime, socket, traceback
-from typing import Any, Dict, Optional
+
+import datetime
+import json
+import os
+import socket
+import threading
+import traceback
+from typing import Any, Optional
 
 _lock = threading.Lock()
 
@@ -19,7 +25,7 @@ def _ensure_dir(path: str):
         pass
 
 def log_event(event: str, *, search_id: Optional[str] = None, level: str = 'INFO', **fields: Any) -> None:
-    record: Dict[str, Any] = {
+    record: dict[str, Any] = {
         'ts': datetime.datetime.now(datetime.UTC).isoformat(),
         'event': event,
         'level': level,

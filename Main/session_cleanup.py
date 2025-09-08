@@ -12,7 +12,12 @@ Enable raw pruning only with explicit retention days > 0.
 Exit code: 0 success, 1 error.
 """
 from __future__ import annotations
-import os, sqlite3, logging, argparse, json
+
+import argparse
+import json
+import logging
+import os
+import sqlite3
 from datetime import datetime, timedelta
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'DB', 'Main_DB.db'))
@@ -96,9 +101,12 @@ def remove_orphans(dry_run: bool = False) -> dict:
         if dry_run:
             return stats
         # Delete them
-        for oid in lay_orphans: cur.execute("DELETE FROM layovers WHERE id = ?", (oid,))
-        for oid in seg_orphans: cur.execute("DELETE FROM flight_segments WHERE id = ?", (oid,))
-        for oid in fr_orphans: cur.execute("DELETE FROM flight_results WHERE id = ?", (oid,))
+        for oid in lay_orphans:
+            cur.execute("DELETE FROM layovers WHERE id = ?", (oid,))
+        for oid in seg_orphans:
+            cur.execute("DELETE FROM flight_segments WHERE id = ?", (oid,))
+        for oid in fr_orphans:
+            cur.execute("DELETE FROM flight_results WHERE id = ?", (oid,))
         conn.commit()
         stats['deleted'] = {
             'layovers': len(lay_orphans),
@@ -108,7 +116,8 @@ def remove_orphans(dry_run: bool = False) -> dict:
     return stats
 
 def vacuum(dry_run: bool = False) -> bool:
-    if dry_run: return True
+    if dry_run:
+        return True
     with _connect() as conn:
         conn.execute("VACUUM")
     return True
@@ -160,7 +169,7 @@ def main():
         if not args.json:
             print("ERROR:", e)
         print(json.dumps(summary, indent=2))
-        raise SystemExit(1)
+    raise SystemExit(1) from None
 
     if args.json:
         print(json.dumps(summary, indent=2))

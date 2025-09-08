@@ -1,4 +1,7 @@
-import os, sys, sqlite3, tempfile, types, json
+import os
+import sqlite3
+import sys
+import tempfile
 from datetime import datetime, timedelta
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
@@ -6,8 +9,8 @@ MAIN_DIR = os.path.join(ROOT, 'Main')
 if MAIN_DIR not in sys.path:
     sys.path.insert(0, MAIN_DIR)
 
-from enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 from core.common_validation import RateLimiter  # type: ignore
+from enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 
 
 class DummyAPI:

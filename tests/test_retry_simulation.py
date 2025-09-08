@@ -1,7 +1,9 @@
-import os, sys
-import pytest
+import os
+import sys
+
 sys.path.append(os.path.join(os.getcwd(), 'Main'))
 from serpapi_client import SerpAPIFlightClient  # type: ignore
+
 
 class DummyResp:
     def __init__(self, status_code=200, payload=None):

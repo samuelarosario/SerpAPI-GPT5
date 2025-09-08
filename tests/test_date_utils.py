@@ -1,6 +1,9 @@
-import unittest, re
+import re
+import unittest
 from datetime import date as _date
-from date_utils import parse_date, DateParseError
+
+from date_utils import DateParseError, parse_date
+
 
 class TestDateUtils(unittest.TestCase):
     def test_full_format(self):

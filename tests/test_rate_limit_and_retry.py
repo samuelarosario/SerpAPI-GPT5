@@ -1,5 +1,8 @@
-import time, sys, pathlib, os, requests
+import pathlib
+import sys
+
 import pytest
+import requests
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MAIN_DIR = ROOT / 'Main'
@@ -20,7 +23,7 @@ def test_rate_limiter_basic_window(monkeypatch):
     # Fill minute list artificially
     rl._minute = []
     rl._hour = []
-    from datetime import datetime, timedelta
+    from datetime import datetime
     now = datetime.now()
     rl._minute = [now for _ in range(60)]  # exceed default minute limit if config < 60
     rl._hour = [now for _ in range(1000)]  # large hour list

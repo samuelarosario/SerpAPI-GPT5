@@ -2,30 +2,19 @@
 
 Cache-first strategy; raw API data retained by default per retention policy.
 """
-import requests, json, time, logging, sqlite3, hashlib, os, sys, pathlib
+import json
+import logging
+import os
+import sqlite3
+from datetime import datetime, timedelta
 from time import perf_counter
-from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional, Any, Tuple, Union
-from urllib.parse import urlencode
+from typing import Any
 
-ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
-MAIN_DIR = pathlib.Path(__file__).resolve().parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))  # project root (for date_utils, etc.)
-if str(MAIN_DIR) not in sys.path:
-    sys.path.append(str(MAIN_DIR))  # explicit package path
+import requests
 
-# Add DB directory to path for imports (idempotent)
-DB_DIR = os.path.join(os.path.dirname(__file__), '..', 'DB')
-if DB_DIR not in sys.path:
-    sys.path.append(DB_DIR)
+from Main.cache import FlightSearchCache
+from Main.config import RATE_LIMIT_CONFIG, SERPAPI_CONFIG, get_api_key
 
-from Main.config import (
-    SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG,
-    VALIDATION_RULES, get_api_key
-)
-from cache import FlightSearchCache
-from core.db_utils import open_connection  # centralized connection (foreign keys on)
 try:  # prefer real helper
     from DB.database_helper import SerpAPIDatabase  # type: ignore
 except ImportError:  # pragma: no cover
@@ -35,14 +24,15 @@ except ImportError:  # pragma: no cover
         def insert_api_response(self, **kwargs):  # pragma: no cover
             return None
 
-from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
-from core.structured_logging import log_event, log_exception  # type: ignore
-from core.metrics import METRICS  # type: ignore
+from Main.core.common_validation import FlightSearchValidator, RateLimiter  # type: ignore
+from Main.core.metrics import METRICS  # type: ignore
+from Main.core.structured_logging import log_event, log_exception  # type: ignore
+
 
 class EnhancedFlightSearchClient:
     """Enhanced Flight Search Client with Local Database Cache"""
     
-    def __init__(self, api_key: Optional[str] = None, db_path: str = "DB/Main_DB.db"):
+    def __init__(self, api_key: str | None = None, db_path: str = "DB/Main_DB.db"):
         """Initialize the enhanced client"""
         self.api_key = api_key or get_api_key()
         if not os.path.isabs(db_path):
@@ -84,7 +74,7 @@ class EnhancedFlightSearchClient:
                        departure_id: str,
                        arrival_id: str,
                        outbound_date: str,
-                       return_date: Optional[str] = None,
+                       return_date: str | None = None,
                        adults: int = 1,
                        children: int = 0,
                        infants_in_seat: int = 0,
@@ -93,7 +83,7 @@ class EnhancedFlightSearchClient:
                        currency: str = "USD",
                        max_cache_age_hours: int = 24,
                        force_api: bool = False,
-                       **kwargs) -> Dict[str, Any]:
+                       **kwargs) -> dict[str, Any]:
         """
         Smart flight search that checks cache first, then API
         Defaults to round-trip searches for comprehensive data capture
@@ -275,7 +265,7 @@ class EnhancedFlightSearchClient:
                           departure_id: str,
                           arrival_id: str,
                           start_date: str,
-                          **kwargs) -> Dict[str, Any]:
+                          **kwargs) -> dict[str, Any]:
         """
         Search flights for 7 consecutive days starting from start_date
         Returns aggregated results with date-wise breakdown and price trends
@@ -316,8 +306,8 @@ class EnhancedFlightSearchClient:
         end_date = end_dt.strftime('%Y-%m-%d')
 
         # Initialize results containers
-        daily_results: Dict[str, Any] = {}
-        all_flights: List[Dict[str, Any]] = []
+        daily_results: dict[str, Any] = {}
+        all_flights: list[dict[str, Any]] = []
         successful_searches = 0
         total_flights_found = 0
 
@@ -369,7 +359,7 @@ class EnhancedFlightSearchClient:
                 log_event('efs.week.day.error', date=search_date, error=daily_result.get('error'))
 
         # Sort all flights by price across all dates
-        def extract_price(flight: Dict[str, Any]):
+        def extract_price(flight: dict[str, Any]):
             price_str = flight.get('price', '9999 USD')
             try:
                 return float(price_str.replace(' USD', '').replace(',', ''))
@@ -421,11 +411,11 @@ class EnhancedFlightSearchClient:
         return result
 
     # ---------------- Internal validation bridge -----------------
-    def _validate_search_params(self, params: Dict[str, Any]):
+    def _validate_search_params(self, params: dict[str, Any]):
         """Wrapper to reuse common validation (kept separate for easy patching/testing)."""
         return FlightSearchValidator.validate_search_params(params)
     
-    def _analyze_week_price_trend(self, daily_results: Dict) -> Dict[str, Any]:
+    def _analyze_week_price_trend(self, daily_results: dict) -> dict[str, Any]:
         """Analyze price trends across the week"""
         daily_min_prices = {}
         daily_avg_prices = {}
@@ -450,7 +440,7 @@ class EnhancedFlightSearchClient:
                         price = float(flight.get('price', '0').replace(' USD', '').replace(',', ''))
                         if price > 0:
                             prices.append(price)
-                    except:
+                    except Exception:
                         continue
                 
                 # Calculate daily min and avg prices
@@ -489,7 +479,7 @@ class EnhancedFlightSearchClient:
             'trend_analysis': trend_analysis
         }
     
-    def clear_cache(self, older_than_hours: int = 168) -> Dict[str, Any]:
+    def clear_cache(self, older_than_hours: int = 168) -> dict[str, Any]:
         """DEPRECATED: Raw API retention is indefinite by default.
 
         This method no longer deletes raw api_queries automatically to honor the
@@ -505,7 +495,7 @@ class EnhancedFlightSearchClient:
             'deprecated': True
         }
     
-    def get_cache_stats(self) -> Dict[str, Any]:
+    def get_cache_stats(self) -> dict[str, Any]:
         """Get statistics about cached flight data.
 
         Adds raw api_queries count and delta since last stats invocation to help
@@ -535,7 +525,7 @@ class EnhancedFlightSearchClient:
                 if not hasattr(self, '_last_raw_total'):
                     self._last_raw_total = raw_total  # type: ignore[attr-defined]
                 else:
-                    delta = raw_total - getattr(self, '_last_raw_total')  # type: ignore[attr-defined]
+                    delta = raw_total - self._last_raw_total  # type: ignore[attr-defined]
                     self._last_raw_total = raw_total  # type: ignore[attr-defined]
                 
                 # Popular routes (defensive: only if columns exist)
@@ -576,7 +566,7 @@ class EnhancedFlightSearchClient:
             return {'error': str(e)}
 
     # ---------------- Internal structured storage (extracted) -----------------
-    def _store_structured_data(self, search_id: str, search_params: Dict[str, Any], api_response: Dict[str, Any], api_query_id: int | None):
+    def _store_structured_data(self, search_id: str, search_params: dict[str, Any], api_response: dict[str, Any], api_query_id: int | None):
         """Persist normalized flight data (idempotent for a given search_id)."""
         try:
             cache_key = self.cache.generate_cache_key(search_params)
@@ -626,7 +616,7 @@ class EnhancedFlightSearchClient:
         except Exception as e:  # pragma: no cover
             self.logger.error(f"Structured storage error: {e}")
 
-    def _insert_flight_result(self, cur, search_id: str, flight: Dict[str, Any], kind: str, rank: int):
+    def _insert_flight_result(self, cur, search_id: str, flight: dict[str, Any], kind: str, rank: int):
         legacy = 'best_flight' if kind == 'best' else 'other_flight'
         cur.execute(
             """
@@ -659,7 +649,7 @@ class EnhancedFlightSearchClient:
         for order, lay in enumerate(flight.get('layovers', []), 1):
             self._insert_layover(cur, flight_result_id, lay, order)
 
-    def _insert_segment(self, cur, flight_result_id: int, seg: Dict[str, Any], order: int):
+    def _insert_segment(self, cur, flight_result_id: int, seg: dict[str, Any], order: int):
         dep = seg.get('departure_airport', {})
         arr = seg.get('arrival_airport', {})
         # Minimal airport+airline upserts removed for brevity; could re-add if needed
@@ -685,7 +675,7 @@ class EnhancedFlightSearchClient:
             )
         )
 
-    def _insert_layover(self, cur, flight_result_id: int, lay: Dict[str, Any], order: int):
+    def _insert_layover(self, cur, flight_result_id: int, lay: dict[str, Any], order: int):
         cur.execute(
             """
             INSERT INTO layovers (flight_result_id, layover_order, airport_code, duration_minutes, is_overnight, created_at)
@@ -697,7 +687,7 @@ class EnhancedFlightSearchClient:
             )
         )
 
-    def _insert_price_insights(self, cur, search_id: str, pi: Dict[str, Any]):
+    def _insert_price_insights(self, cur, search_id: str, pi: dict[str, Any]):
         cur.execute(
             """
             INSERT INTO price_insights (search_id, lowest_price, price_level, typical_price_low, typical_price_high, price_history, created_at)
@@ -724,13 +714,14 @@ def parse_cli_date(raw: str) -> str:
     4. Year omitted -> current year, roll forward one year if resulting date already past and input had no year.
     5. On malformed input fall back to legacy parse_date for validation consistency.
     """
-    from date_utils import parse_date as _legacy_parse, DateParseError as _DPE  # local import to avoid circulars
+    from date_utils import parse_date as _legacy_parse  # local import to avoid circulars
     raw = raw.strip()
     parts = raw.split('-')
     if len(parts) not in (2,3):
         return _legacy_parse(raw)
     try:
-        a = int(parts[0]); b = int(parts[1])
+        a = int(parts[0])
+        b = int(parts[1])
         year = int(parts[2]) if len(parts) == 3 else None
     except ValueError:
         return _legacy_parse(raw)
@@ -759,8 +750,11 @@ def parse_cli_date(raw: str) -> str:
 
 
 def _cli():  # minimal terminal interface
-    import argparse, json as _json, sys as _sys
-    from date_utils import parse_date, DateParseError, validate_and_order
+    import argparse
+    import json as _json
+    import sys as _sys
+
+    from date_utils import DateParseError, validate_and_order
     def _print_helper():
         helper = """
 Enhanced Flight Search CLI
@@ -833,7 +827,7 @@ Exit Codes:
     except DateParseError as e:
         print(f"Date error: {e}\n")
         _print_helper()
-        raise SystemExit(2)
+        raise SystemExit(2) from None
 
     client = EnhancedFlightSearchClient()
 

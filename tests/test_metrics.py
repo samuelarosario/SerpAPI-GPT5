@@ -1,7 +1,10 @@
-import os, sys
+import os
+import sys
+
 sys.path.append(os.path.join(os.getcwd(), 'Main'))
-from enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 from core.metrics import METRICS  # type: ignore
+from enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
+
 
 def test_metrics_counters_cache_hit(tmp_path, monkeypatch):
     # Use a temp copy of DB if exists, else skip if schema missing

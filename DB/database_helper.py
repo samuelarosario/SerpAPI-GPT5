@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import sqlite3
-import json
-import os
-import logging
 import hashlib
+import json
+import logging
+import os
+import sqlite3
 from datetime import datetime
-from typing import Optional, Dict, List, Any
+from typing import Any, Optional
 
 _MIGRATED: set[str] = set()  # process-level cache of migrated db paths
 
@@ -158,13 +158,13 @@ class SerpAPIDatabase:
     # ------------------------------------------------------------------
     # Drift Detection
     # ------------------------------------------------------------------
-    def detect_schema_drift(self, expected_tables: Optional[List[str]] = None) -> Dict[str, Any]:
+    def detect_schema_drift(self, expected_tables: Optional[list[str]] = None) -> dict[str, Any]:
         if expected_tables is None:
             expected_tables = [
                 'airlines', 'airports', 'api_queries', 'schema_version', 'database_metadata',
                 'flight_results', 'flight_searches', 'flight_segments', 'layovers', 'price_insights', 'route_analytics', 'migration_history'
             ]
-        actual: List[str] = []
+        actual: list[str] = []
         try:
             conn = sqlite3.connect(self.db_path)
             cur = conn.cursor()
@@ -207,7 +207,7 @@ class SerpAPIDatabase:
                 except Exception:
                     pass
 
-    def run_integrity_check(self) -> Dict[str, Any]:
+    def run_integrity_check(self) -> dict[str, Any]:
         conn = self.get_connection()
         try:
             cur = conn.cursor()
@@ -275,7 +275,7 @@ class SerpAPIDatabase:
     # ------------------------------------------------------------------
     def insert_api_response(
         self,
-        query_parameters: Dict[str, Any],
+        query_parameters: dict[str, Any],
         raw_response: str,
         query_type: str = "search",
         status_code: int = 200,
@@ -320,12 +320,12 @@ class SerpAPIDatabase:
         query_type: Optional[str] = None,
         search_term: Optional[str] = None,
         limit: int = 100,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
             query = "SELECT * FROM api_queries WHERE 1=1"
-            params: List[Any] = []
+            params: list[Any] = []
             if query_type:
                 query += " AND query_type = ?"
                 params.append(query_type)
@@ -336,7 +336,7 @@ class SerpAPIDatabase:
             params.append(limit)
             cursor.execute(query, params)
             columns = [d[0] for d in cursor.description]
-            results: List[Dict[str, Any]] = []
+            results: list[dict[str, Any]] = []
             for row in cursor.fetchall():
                 record = dict(zip(columns, row))
                 if record.get("query_parameters"):
@@ -352,11 +352,11 @@ class SerpAPIDatabase:
         finally:
             conn.close()
 
-    def get_database_stats(self) -> Dict[str, Any]:
+    def get_database_stats(self) -> dict[str, Any]:
         conn = self.get_connection()
         cursor = conn.cursor()
         try:
-            stats: Dict[str, Any] = {}
+            stats: dict[str, Any] = {}
             cursor.execute("SELECT COUNT(*) FROM api_queries")
             stats["total_records"] = cursor.fetchone()[0]
             cursor.execute("SELECT query_type, COUNT(*) FROM api_queries GROUP BY query_type")
@@ -420,7 +420,9 @@ def test_database_operations():  # pragma: no cover - retained from original for
 
 
 if __name__ == "__main__":  # pragma: no cover
-    import argparse, sys, json as _json
+    import argparse
+    import json as _json
+    import sys
     parser = argparse.ArgumentParser(description="Database helper utility")
     parser.add_argument('--checksum', action='store_true', help='Print current schema checksum and exit')
     parser.add_argument('--snapshot', action='store_true', help='Regenerate schema snapshot file and print checksum')

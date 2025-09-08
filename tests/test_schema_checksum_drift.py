@@ -1,4 +1,8 @@
-import pathlib, re, sqlite3, tempfile, shutil
+import pathlib
+import re
+import shutil
+import tempfile
+
 from DB.database_helper import SerpAPIDatabase
 
 DB_PATH = 'DB/Main_DB.db'

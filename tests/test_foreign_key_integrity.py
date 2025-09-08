@@ -1,4 +1,7 @@
-import os, sqlite3, tempfile, sys
+import os
+import sqlite3
+import sys
+import tempfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 MAIN_DIR = os.path.join(ROOT, 'Main')

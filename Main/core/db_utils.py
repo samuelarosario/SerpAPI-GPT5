@@ -8,8 +8,9 @@ This centralizes connection initialization so all modules consistently
 apply integrity guarantees.
 """
 from __future__ import annotations
-import os, sqlite3
-from typing import Generator
+
+import os
+import sqlite3
 
 __all__ = ["open_connection"]
 

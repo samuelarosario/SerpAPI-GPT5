@@ -1,10 +1,17 @@
 """Cache management for flight searches (extracted from enhanced_flight_search)."""
 from __future__ import annotations
-import json, sqlite3, hashlib, logging, os
-from core.metrics import METRICS  # type: ignore
-from core.db_utils import open_connection
+
+import hashlib
+import json
+import logging
+import os
+import sqlite3
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Any, Optional
+
+from core.db_utils import open_connection
+from core.metrics import METRICS  # type: ignore
+
 
 class FlightSearchCache:
     """Manages local database cache for flight searches (24h freshness policy)."""
@@ -30,7 +37,7 @@ class FlightSearchCache:
             self.logger.warning(f"Could not ensure cache_key index: {e}")
 
     # ------------------- key generation -------------------
-    def generate_cache_key(self, search_params: Dict[str, Any]) -> str:
+    def generate_cache_key(self, search_params: dict[str, Any]) -> str:
         normalized = {}
         for k, v in search_params.items():
             if v is not None:
@@ -38,7 +45,7 @@ class FlightSearchCache:
         return hashlib.sha256(json.dumps(normalized, sort_keys=True).encode()).hexdigest()
 
     # ------------------- lookup -------------------
-    def search_cache(self, search_params: Dict[str, Any], max_age_hours: int = 24) -> Optional[Dict[str, Any]]:
+    def search_cache(self, search_params: dict[str, Any], max_age_hours: int = 24) -> Optional[dict[str, Any]]:
         try:
             cache_key = self.generate_cache_key(search_params)
             with open_connection(self.db_path) as conn:

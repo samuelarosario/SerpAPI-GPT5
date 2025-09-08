@@ -12,9 +12,10 @@ Provides:
   validate_and_order(outbound, return_date) -> (outbound, return) with error if invalid
 """
 from __future__ import annotations
-from datetime import date as _date, datetime, timedelta
+
 import re
-from typing import Tuple
+from datetime import date as _date
+from datetime import datetime
 
 _MM_DD_YYYY = re.compile(r"^(\d{1,2})-(\d{1,2})-(\d{4})$")
 _MM_DD = re.compile(r"^(\d{1,2})-(\d{1,2})$")
@@ -73,7 +74,7 @@ def within_horizon(date_str: str, min_days: int = 1, max_days: int = 365) -> boo
     delta = (target - today).days
     return min_days <= delta <= max_days
 
-def validate_and_order(outbound: str, return_date: str) -> Tuple[str, str]:
+def validate_and_order(outbound: str, return_date: str) -> tuple[str, str]:
     if return_date < outbound:
         raise DateParseError("Return date earlier than outbound date")
     return outbound, return_date

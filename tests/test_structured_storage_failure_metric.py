@@ -1,12 +1,16 @@
-import os, sys
+import os
+import sys
+
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 import importlib
+
 # Ensure config is resolvable (root already inserted)
 importlib.invalidate_caches()
-from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 from core.metrics import METRICS  # type: ignore
+
+from Main.enhanced_flight_search import EnhancedFlightSearchClient  # type: ignore
 
 # We will monkeypatch the internal _store_structured_data to raise
 

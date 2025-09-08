@@ -10,7 +10,9 @@ Strategy (SQLite limitation workaround):
 Idempotent: If query_timestamp already absent, exits cleanly.
 Backup: Optional simple .bak copy if desired by operator.
 """
-import sqlite3, os, shutil, sys
+import os
+import shutil
+import sqlite3
 
 DB_PATH = os.path.join(os.path.dirname(__file__), 'Main_DB.db')
 

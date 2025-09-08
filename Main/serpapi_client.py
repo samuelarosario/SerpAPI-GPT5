@@ -3,42 +3,30 @@ SerpAPI Google Flights Client
 Handles API requests, authentication, and response management
 """
 
-import requests
-import json
-import time
-import logging
-from datetime import datetime
-from typing import Dict, Optional, Any
-from urllib.parse import urlencode
 import hashlib
+import json
+import logging
 import random
+import time
+from datetime import datetime
 from time import perf_counter
-import os, sys, pathlib
+from typing import Any
+from urllib.parse import urlencode
 
-# Ensure project and Main directories on path so `config` resolves when imported via tests
-ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
-MAIN_DIR = pathlib.Path(__file__).resolve().parent
-if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
-if str(MAIN_DIR) not in sys.path:
-    sys.path.append(str(MAIN_DIR))
+import requests
 
-from core.metrics import METRICS  # type: ignore
-from core.structured_logging import log_event, log_exception  # type: ignore
+from Main.config import DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, SERPAPI_CONFIG, get_api_key
+from Main.core.common_validation import FlightSearchValidator, RateLimiter  # type: ignore
+from Main.core.logging_setup import init_logging  # type: ignore
+from Main.core.metrics import METRICS  # type: ignore
+from Main.core.structured_logging import log_event, log_exception  # type: ignore
 
-from Main.config import (
-    SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, 
-    get_api_key
-)
-
-from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
-from core.logging_setup import init_logging  # type: ignore
 init_logging()
 
 class SerpAPIFlightClient:
     """SerpAPI Google Flights API Client"""
     
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         """Initialize the client (API key must come from environment variable)."""
         self.api_key = api_key or get_api_key()
         if not self.api_key:
@@ -57,7 +45,7 @@ class SerpAPIFlightClient:
         # Setup logging
         self.logger = logging.getLogger(__name__)
     
-    def generate_search_id(self, params: Dict[str, Any]) -> str:
+    def generate_search_id(self, params: dict[str, Any]) -> str:
         """Generate unique search ID based on parameters"""
         # Create a hash of the search parameters
         param_string = json.dumps(params, sort_keys=True)
@@ -65,7 +53,7 @@ class SerpAPIFlightClient:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         return f"search_{timestamp}_{search_hash}"
     
-    def build_search_params(self, **kwargs) -> Dict[str, Any]:
+    def build_search_params(self, **kwargs) -> dict[str, Any]:
         """Build complete search parameters with defaults"""
         params = DEFAULT_SEARCH_PARAMS.copy()
         params.update(kwargs)
@@ -79,7 +67,7 @@ class SerpAPIFlightClient:
         
         return params
     
-    def search_flights(self, **kwargs) -> Dict[str, Any]:
+    def search_flights(self, **kwargs) -> dict[str, Any]:
         """Search for flights using SerpAPI.
 
         Accepts all standard search params plus optional:
@@ -150,7 +138,7 @@ class SerpAPIFlightClient:
         
         return result
     
-    def _make_request(self, params: Dict[str, Any], *, search_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    def _make_request(self, params: dict[str, Any], *, search_id: str | None = None) -> dict[str, Any] | None:
         """Make HTTP request to SerpAPI with retries and jittered exponential backoff.
 
         Jitter rationale: Avoids synchronized retry storms when multiple processes
@@ -198,7 +186,7 @@ class SerpAPIFlightClient:
                     self.logger.error(f"{prefix}All {self.max_retries + 1} attempts failed")
                     METRICS.inc('api_failures')
                     log_exception('api.failed', search_id=search_id, exc=e, attempts=self.max_retries+1)
-                    raise Exception(f"API request failed after {self.max_retries + 1} attempts: {e}")
+                    raise Exception(f"API request failed after {self.max_retries + 1} attempts: {e}") from e
             
             except Exception as e:
                 prefix = f"[{search_id}] " if search_id else ""
@@ -211,7 +199,7 @@ class SerpAPIFlightClient:
         return None
 
     def search_one_way(self, departure_id: str, arrival_id: str, 
-                      outbound_date: str, **kwargs) -> Dict[str, Any]:
+                      outbound_date: str, **kwargs) -> dict[str, Any]:
         """Search for one-way flights"""
         kwargs.update({
             'departure_id': departure_id,
@@ -222,7 +210,7 @@ class SerpAPIFlightClient:
         return self.search_flights(**kwargs)
     
     def search_round_trip(self, departure_id: str, arrival_id: str,
-                         outbound_date: str, return_date: str, **kwargs) -> Dict[str, Any]:
+                         outbound_date: str, return_date: str, **kwargs) -> dict[str, Any]:
         """Search for round-trip flights"""
         kwargs.update({
             'departure_id': departure_id,
@@ -233,7 +221,7 @@ class SerpAPIFlightClient:
         })
         return self.search_flights(**kwargs)
     
-    def search_multi_city(self, multi_city_json: str, **kwargs) -> Dict[str, Any]:
+    def search_multi_city(self, multi_city_json: str, **kwargs) -> dict[str, Any]:
         """Search for multi-city flights"""
         kwargs.update({
             'multi_city_json': multi_city_json,

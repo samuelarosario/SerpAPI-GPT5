@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 
@@ -10,6 +9,7 @@ for p in (ROOT, MAIN_DIR):
         sys.path.insert(0, p)
 
 from Main.enhanced_flight_search import FlightSearchCache
+
 
 def test_cache_key_stability():
     cache = FlightSearchCache(db_path='DB/Main_DB.db')

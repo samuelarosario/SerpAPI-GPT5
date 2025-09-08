@@ -1,5 +1,5 @@
-import pathlib, sys
-import sqlite3
+import pathlib
+import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 DB_DIR = ROOT / 'DB'
