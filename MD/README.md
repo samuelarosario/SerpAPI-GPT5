@@ -22,9 +22,9 @@ SerpAPI/
 │   └── core/                       # Shared validation & logging utilities
 ├── DB/                             # Database files and scripts
 │   ├── Main_DB.db                  # SQLite database
-│   ├── database_helper.py          # Database utilities
-│   ├── enhanced_schema.sql         # Database schema
-│   └── schema_upgrade.py           # Database migration script
+│   ├── database_helper.py          # DB utilities (WAL, checksum, drift detection, snapshot)
+│   ├── current_schema.sql          # Auto-generated canonical schema snapshot
+│   └── migrate_drop_query_timestamp.py  # Legacy one-off migration helper
 ├── tests/                          # Test suite (also hosts any temp_ experimental scripts)
 ├── agent-instructions.md           # Agent guidelines
 └── requirements.txt                # Project requirements
@@ -59,10 +59,10 @@ pip install requests sqlite3
 The database is already initialized with an optimized schema. To verify:
 ```bash
 cd DB  
-python schema_upgrade.py
+python DB/migrate_drop_query_timestamp.py  # Only if upgrading a pre-enhanced legacy DB
 ```
 
-Current schema is documented in `DB/current_schema.sql` - this is the canonical reference and should not be modified without explicit double-confirmation.
+Current schema is documented in `DB/current_schema.sql` (auto-generated). Regenerate via `SerpAPIDatabase.generate_schema_snapshot()` after any approved structural migration.
 
 ### 4. Test the System
 
@@ -293,7 +293,7 @@ python Main/serpapi_client.py  # Basic client invocation (will exit if no key)
 python -m pytest -q            # Run automated test suite
 ```
 
-## 🧬 Schema Versioning Strategy
+## 🧬 Schema Versioning & Integrity
 
 The system maintains a single-row `schema_version` table as a manifest.
 
@@ -305,9 +305,7 @@ The system maintains a single-row `schema_version` table as a manifest.
     2. CHANGELOG entry
     3. Test coverage validating post-migration state
 
-Future enhancement (planned P2): multi-row migration history (id, version, applied_at, description, checksum) enabling drift detection and audit.
-
-Drift detection recommendation: periodically compare live schema (via `PRAGMA table_info`) to `DB/current_schema.sql`. (Automation pending.)
+Implemented migration history (baseline row) with checksum backfill. Drift detection provided by `detect_schema_drift()` and checksum comparison. Snapshot regeneration keeps `current_schema.sql` synchronized.
 
 ## �‍💻 Development & Testing Workflow
 
