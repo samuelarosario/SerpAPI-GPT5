@@ -75,7 +75,7 @@ async def dashboard(request: Request):
 @app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
 async def flight_search_ui(request: Request):  # Simple HTML + JS form
     return HTMLResponse("""<!DOCTYPE html><html><head><title>Flight Search</title><meta charset='utf-8'/><meta http-equiv='Cache-Control' content='no-store' />
-    <style>body{font-family:system-ui;margin:0;background:#eef5fb;min-height:100vh;}header{background:#134e9b;color:#fff;padding:.9rem 1.2rem;}h1{margin:0;font-size:1.15rem;}main{max-width:860px;margin:1.2rem auto;background:#fff;padding:1.2rem 1.5rem;border-radius:10px;box-shadow:0 2px 8px -2px rgba(0,40,90,.15);}form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:1rem;}label{font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;color:#134e9b;display:block;margin-bottom:.25rem;}input{padding:.55rem .6rem;border:1px solid #bcd3ea;border-radius:6px;font-size:.85rem;background:#f5faff;min-width:140px;}button{padding:.6rem 1rem;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;font-size:.8rem;}button:hover{background:#134e9b;}#results{margin-top:1rem;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:.9rem;margin-top:.75rem;} .card{border:1px solid #d5e3f2;padding:.65rem .7rem;border-radius:8px;background:#f8fbfe;font-size:.7rem;line-height:1.25rem;} .src{font-weight:600;color:#0f2747;font-size:.75rem;margin-bottom:.25rem;} .price{color:#047857;font-weight:600;} .err{color:#b91c1c;font-size:.7rem;margin-top:.5rem;} .meta{font-size:.6rem;color:#475569;margin-top:.4rem;} a.back{color:#fff;text-decoration:none;margin-left:1rem;font-size:.7rem;} .tags span{display:inline-block;background:#134e9b;color:#fff;font-size:.55rem;padding:.15rem .45rem;border-radius:1rem;margin-right:.3rem;margin-top:.25rem;}</style></head>
+    <style>body{font-family:system-ui;margin:0;background:#eef5fb;min-height:100vh;}header{background:#134e9b;color:#fff;padding:.9rem 1.2rem;}h1{margin:0;font-size:1.15rem;}main{max-width:960px;margin:1.2rem auto;background:#fff;padding:1.2rem 1.5rem;border-radius:10px;box-shadow:0 2px 8px -2px rgba(0,40,90,.15);}form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:1rem;}label{font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;color:#134e9b;display:block;margin-bottom:.25rem;}input{padding:.55rem .6rem;border:1px solid #bcd3ea;border-radius:6px;font-size:.85rem;background:#f5faff;min-width:140px;}button{padding:.6rem 1rem;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;font-size:.8rem;}button:hover{background:#134e9b;}#results{margin-top:1rem;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.9rem;margin-top:.75rem;} .card{border:1px solid #d5e3f2;padding:.65rem .7rem;border-radius:8px;background:#f8fbfe;font-size:.7rem;line-height:1.25rem;display:flex;flex-direction:column;gap:.25rem;} .src{font-weight:600;color:#0f2747;font-size:.72rem;margin-bottom:.1rem;} .price{color:#047857;font-weight:600;font-size:.75rem;} .err{color:#b91c1c;font-size:.7rem;margin-top:.5rem;} .meta{font-size:.58rem;color:#475569;margin-top:.15rem;} a.back{color:#fff;text-decoration:none;margin-left:1rem;font-size:.7rem;} .tags{margin-top:.15rem;} .tags span{display:inline-block;background:#134e9b;color:#fff;font-size:.55rem;padding:.15rem .45rem;border-radius:1rem;margin-right:.3rem;margin-top:.25rem;} .itinerary{font-size:.58rem;color:#1e3a5f;line-height:1rem;margin-top:.2rem;} .segments{margin-top:.15rem;border-top:1px dashed #c3d7ea;padding-top:.35rem;display:flex;flex-direction:column;gap:.25rem;} .seg{display:flex;justify-content:space-between;font-size:.55rem;color:#334155;} .seg span{white-space:nowrap;} .pill{background:#134e9b;color:#fff;padding:.1rem .4rem;border-radius:.75rem;font-size:.5rem;font-weight:600;margin-right:.3rem;}</style></head>
         <body><header><h1>Flight Search <a class='back' href='/dashboard'>&larr; Back</a></h1></header><main>
         <form id='fsForm'>
             <div><label for='origin_code'>Origin</label><input id='origin_code' name='origin' placeholder='e.g. JFK' required maxlength='5'/></div>
@@ -112,18 +112,46 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 statusEl.textContent=`Source: ${data.source} | Search ID: ${data.search_id||'n/a'}`;
                 const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
                 if(flights.length===0){ resEl.innerHTML='<p class="meta">No flights found.</p>'; return; }
+
+                function fmtDuration(mins){ if(!mins||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h}h ${m}m`; }
+                function buildRoute(flt){
+                    const segs = flt.flights||[];
+                    if(!segs.length) return 'Flight';
+                    const first = segs[0].departure_airport?.id || '?';
+                    const last = segs[segs.length-1].arrival_airport?.id || '?';
+                    return `${first} → ${last}`;
+                }
+                function buildStops(flt){ const segs=flt.flights||[]; return Math.max(0,segs.length-1); }
+                function priceStr(p){ if(!p) return 'N/A'; return p.toString().includes('USD')?p:`${p} USD`; }
+                function segmentLines(flt){
+                    const segs = flt.flights||[];
+                    return segs.map((s,i)=>{
+                        const dep = s.departure_airport?.id||'';
+                        const arr = s.arrival_airport?.id||'';
+                        const al = s.airline||'';
+                        const fn = s.flight_number||'';
+                        const dt = s.departure_time? (s.departure_time.split('T')[1]||s.departure_time) : '';
+                        const at = s.arrival_time? (s.arrival_time.split('T')[1]||s.arrival_time) : '';
+                        const dur = s.duration? `${s.duration}m` : '';
+                        return `<div class="seg"><span>${dep}→${arr}</span><span>${al}${fn?' '+fn:''}</span><span>${dt}→${at}</span><span>${dur}</span></div>`;
+                    }).join('');
+                }
                 let html='<div class="grid">';
-                flights.slice(0,30).forEach(flt=>{ 
-                    html+=`<div class='card'>
-                        <div class='src'>${flt.flights?flt.flights.join(' • '):(flt.flight||'Flight')}</div>
-                        <div class='price'>${flt.price||'N/A'}</div>
-                        <div class='meta'>${flt.departure_airport||''} → ${flt.arrival_airport||''}</div>
-                        <div class='meta'>Dur: ${(flt.duration||'').toString().replace('duration:','')}</div>
-                        <div class='tags'>${flt.type?`<span>${flt.type}</span>`:''}${flt.airline?`<span>${flt.airline}</span>`:''}</div>
-                    </div>`; 
+                flights.slice(0,30).forEach(flt=>{
+                    const route = buildRoute(flt);
+                    const dur = fmtDuration(flt.total_duration || flt.duration);
+                    const stops = buildStops(flt);
+                    const segHTML = segmentLines(flt);
+                    html += `<div class='card'>
+                        <div class='src'>${route}</div>
+                        <div class='price'>${priceStr(flt.price)}</div>
+                        <div class='meta'>Duration: ${dur || '—'} | Stops: ${stops}</div>
+                        <div class='tags'>${flt.type?`<span class='pill'>${flt.type}</span>`:''}${flt.airline?`<span class='pill'>${flt.airline}</span>`:''}</div>
+                        <div class='segments'>${segHTML}</div>
+                    </div>`;
                 });
-                html+='</div>';
-                resEl.innerHTML=html; 
+                html += '</div>';
+                resEl.innerHTML = html;
             } catch(err){ 
                 console.error('Flight search exception', err);
                 statusEl.textContent='Error: '+err.message; 
