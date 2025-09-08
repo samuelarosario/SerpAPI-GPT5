@@ -206,6 +206,7 @@ Use `--help` or provide incomplete arguments to display the embedded helper.
 7. **`airlines`** - Airline reference data
 8. **`price_insights`** - Price analysis data
 9. **`route_analytics`** - Route performance metrics
+10. **`schema_version`** - Single-row manifest capturing current schema baseline (`2025.09.08-baseline`)
 
 ### Key Features
 
@@ -292,7 +293,53 @@ python Main/serpapi_client.py  # Basic client invocation (will exit if no key)
 python -m pytest -q            # Run automated test suite
 ```
 
-## 🔄 Refactor Status
+## 🧬 Schema Versioning Strategy
+
+The system maintains a single-row `schema_version` table as a manifest.
+
+- Current baseline: `2025.09.08-baseline`
+- Initialization: created automatically on first connection if absent
+- Purpose: anchor point for future incremental migrations beyond the legacy `query_timestamp` removal
+- Policy: Any structural change (add/alter/drop table/column) MUST increment the version string (date + short tag) and be accompanied by:
+    1. Migration function or script
+    2. CHANGELOG entry
+    3. Test coverage validating post-migration state
+
+Future enhancement (planned P2): multi-row migration history (id, version, applied_at, description, checksum) enabling drift detection and audit.
+
+Drift detection recommendation: periodically compare live schema (via `PRAGMA table_info`) to `DB/current_schema.sql`. (Automation pending.)
+
+## �‍💻 Development & Testing Workflow
+
+Fast iteration guidelines:
+
+1. Set environment variable once (PowerShell):
+```powershell
+[System.Environment]::SetEnvironmentVariable('SERPAPI_KEY','<key>',[System.EnvironmentVariableTarget]::User)
+```
+2. Run targeted tests while editing:
+```powershell
+python -m pytest tests/test_week_range_and_rate_limiter.py::test_week_range_aggregation -q
+```
+3. Inspect cache stats quickly:
+```powershell
+python Main/enhanced_flight_search.py LAX JFK 15-09 --stats
+```
+4. Prune only structured cache (keep raw):
+```powershell
+python Main/session_cleanup.py --cache-age-hours 24 --orphans
+```
+5. Explicitly prune raw aligned to cache window (irreversible):
+```powershell
+python Main/session_cleanup.py --cache-age-hours 24 --prune-raw-cache-age
+```
+
+Notes:
+- Raw api_queries retention is indefinite unless a pruning flag is passed.
+- Foreign key enforcement is active (see test_foreign_key_integrity) safeguarding relational deletes.
+- Retry backoff now uses jitter to reduce thundering herds; tune in `SERPAPI_CONFIG`.
+
+## �🔄 Refactor Status
 
 The earlier Phase 1 sandbox has been fully merged. Shared utilities now live in `Main/core/` and the temporary `Phase 1/` directory is deprecated (safe to delete). All references to validation, logging, and date parsing are centralized.
 
@@ -317,6 +364,7 @@ Internal logic uses canonical `YYYY-MM-DD`. Return date must be >= outbound date
 - Path: `DB/Main_DB.db`
 - Type: SQLite
 - Version: 2.0 (Enhanced Schema)
+ - Migration: Legacy `query_timestamp` column removed (run `python DB/migrate_drop_query_timestamp.py` once if upgrading an existing DB)
 
 ## 📋 Requirements
 

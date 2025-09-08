@@ -1,8 +1,8 @@
 # System Status Report
 ## SerpAPI Flight Data Collection System
 
-**Generated:** 2025-01-04  
-**Status:** ✅ COMPLETE & OPERATIONAL
+**Generated:** 2025-09-08  
+**Status:** ✅ OPERATIONAL (Post-migration + Observability P1)
 
 ---
 
@@ -75,12 +75,11 @@
 
 ### Last System Test: SUCCESSFUL ✅
 **Date:** 2025-09-08  
-**Test:** Pytest suite & CLI argument helper integration  
 **Results:**
-- ✅ 9 tests passed
-- ✅ CLI helper shows on insufficient arguments
-- ✅ Cache module functioning
-- ✅ Raw + structured storage intact
+- ✅ 22 tests passed (retention, migration, CLI dates, week range, FK integrity, metrics, schema_version manifest)
+- ✅ Cache & API correlation logging (structured + classic) active
+- ✅ Automated schema migration validated
+- ✅ In-memory metrics (api_calls, api_failures, cache_hits, cache_misses, retry_attempts) exposed via `get_cache_stats()`
 
 ### Test Coverage
 - ✅ Database operations (create, read, update)
@@ -94,18 +93,16 @@
 
 ## 📈 Database Statistics
 
-### Tables Created: 11
-1. `api_queries` - Raw API response storage
-2. `flight_searches` - Search parameters and metadata
-3. `flight_results` - Individual flight options
-4. `flight_segments` - Flight legs and segments
-5. `layovers` - Connection information
-6. `airports` - Airport reference data
-7. `airlines` - Airline reference data
-8. `price_insights` - Price analysis data
-9. `route_analytics` - Route performance metrics
-10. `search_analytics` - Search pattern analysis
-11. `system_metadata` - System configuration and versioning
+### Core Tables (Active)
+1. `api_queries`
+2. `flight_searches`
+3. `flight_results`
+4. `flight_segments`
+5. `layovers`
+6. `airports`
+7. `airlines`
+8. `price_insights`
+9. `route_analytics`
 
 ### Data Integrity Features
 - Foreign key constraints for referential integrity
@@ -130,8 +127,9 @@
 - **Data Relationships**: ✅ Properly maintained
 - **Performance**: ✅ Optimized for analysis
 
-### Analysis Capabilities
-Legacy analysis module removed; future analytics will be reintroduced as focused utilities. Current emphasis: reliable data capture & search caching.
+### Analysis & Observability
+Legacy broad analysis module removed; emphasis remains: reliable capture + cache-first retrieval. Route & price insights preserved.
+Structured JSON event stream (`logs/flight_events.jsonl`) records lifecycle events (efs.search.*, api.*, cache hits/misses, week range progress) with UTC timestamps.
 
 ---
 
@@ -190,12 +188,14 @@ Legacy analysis module removed; future analytics will be reintroduced as focused
 - Web interface development
 - API expansion (additional flight providers)
 - Performance optimization
+- Persistent metrics export (Prometheus / OpenTelemetry)
+- JSON log ingestion pipeline & dashboards
 
 ---
 
 ## ✅ Final System Validation
 
-**SYSTEM STATUS: FULLY OPERATIONAL**
+**SYSTEM STATUS: FULLY OPERATIONAL (with enhanced observability & version manifest)**
 
 All specified requirements have been met:
 - ✅ API integration complete and tested
@@ -203,7 +203,7 @@ All specified requirements have been met:
 - ✅ Raw data preservation implemented
 - ✅ Unified search & storage operational
 - ✅ Documentation complete
-- ✅ Testing successful
+- ✅ Testing successful (22 tests)
 - ✅ Production ready
 
 **The SerpAPI Flight Data Collection System is ready for immediate use.**
