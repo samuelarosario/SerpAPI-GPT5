@@ -78,13 +78,13 @@ python Main/enhanced_flight_search.py LAX JFK 15-09-2025 --week
 
 ### 5. (Optional) Session Cleanup Automation
 
-Use the provided script to prune expired cached searches while preserving raw API data:
+Use the provided script to prune expired cached structured search data while preserving raw API data (raw retained by default):
 
 ```powershell
 python Main/session_cleanup.py --cache-age-hours 24 --orphans --vacuum --json
 ```
 
-Raw data (api_queries) is NEVER deleted unless you explicitly set a retention:
+Raw data (api_queries) is NEVER deleted by automatic cache maintenance; only removed when you explicitly set a retention:
 
 ```powershell
 # Keep only last 7 days of raw queries (irreversible)

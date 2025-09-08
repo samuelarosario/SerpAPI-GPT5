@@ -105,7 +105,14 @@ class FlightSearchCache:
             return None
 
     # ------------------- cleanup -------------------
-    def cleanup_old_data(self, max_age_hours: int = 24):  # kept for compatibility
+    def cleanup_old_data(self, max_age_hours: int = 24, prune_raw: bool = False):  # kept for compatibility
+        """Remove expired cached search structures while (by default) preserving raw api_queries.
+
+        Raw retention policy (authoritative, Sept 2025):
+        - Raw API rows (api_queries) are retained indefinitely unless an *explicit* retention
+          policy is applied via the session cleanup utility or prune_raw=True here.
+        - This method only removes structured / derived tables to keep cache window fresh.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cur = conn.cursor()
@@ -118,10 +125,11 @@ class FlightSearchCache:
                     cur.execute("DELETE FROM flight_results WHERE search_id = ?", (sid,))
                     cur.execute("DELETE FROM price_insights WHERE search_id = ?", (sid,))
                     cur.execute("DELETE FROM flight_searches WHERE search_id = ?", (sid,))
-                cur.execute("DELETE FROM api_queries WHERE created_at < ?", (cutoff.isoformat(),))
+                if prune_raw:
+                    cur.execute("DELETE FROM api_queries WHERE created_at < ?", (cutoff.isoformat(),))
                 conn.commit()
                 if old_ids:
-                    self.logger.info(f"Cleaned {len(old_ids)} expired searches")
+                    self.logger.info(f"Cleaned {len(old_ids)} expired searches (raw retained={not prune_raw})")
         except Exception as e:
             self.logger.error(f"Cleanup error: {e}")
 

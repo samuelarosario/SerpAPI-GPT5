@@ -8,31 +8,36 @@ The system uses a **24-hour rolling cleanup policy** rather than complete daily 
 
 ### **What Gets Cleaned vs What Stays:**
 
-**🗑️ CLEANED AUTOMATICALLY (24-hour rolling):**
+**🗑️ CLEANED AUTOMATICALLY (24-hour rolling – structured cache only):**
 - `flight_searches` - Search queries and parameters
 - `flight_results` - Individual flight options and pricing  
 - `flight_segments` - Flight legs and routing details
 - `layovers` - Connection information
 - `price_insights` - Pricing analysis data
-- `api_queries` - Raw API response data
 
-**💾 PERMANENT DATA (Never cleaned):**
+**💾 RAW DATA RETENTION (Authoritative Policy – Sept 2025):**
+- `api_queries` (raw API responses) are **NOT** deleted by automatic cache maintenance. They are preserved indefinitely by default to satisfy the requirement: *"Store ALL raw data from EVERY API query."*
+- Raw pruning occurs ONLY when explicitly requested via:  
+   `python Main/session_cleanup.py --raw-retention-days N`  
+   or programmatically by calling `FlightSearchCache.cleanup_old_data(..., prune_raw=True)`.
+
+**Reference / Permanent Tables (never automatically cleaned):**
 - `airports` - Airport reference data (codes, names, locations)
 - `airlines` - Airline reference data (codes, names, logos)
 - `route_analytics` - Long-term route statistics and trends
 
 ## ⏰ **When Cleanup Happens**
 
-### **Automatic Cleanup Triggers:**
+### **Automatic Cleanup Triggers (Structured Only):**
 ```python
-# Before every search operation
-self.cache.cleanup_old_data(max_cache_age_hours=24)
+# Before every search operation (raw responses preserved)
+self.cache.cleanup_old_data(max_cache_age_hours=24)  # raw retained
 ```
 
-**Cleanup runs:**
-- ✅ **Before each new search** - Ensures fresh data window
+**Cleanup runs (structured tables only):**
+- ✅ **Before each new search** - Ensures fresh structured cache window
 - ✅ **Automatically** - No manual intervention needed
-- ✅ **Intelligent** - Only removes data older than 24 hours
+- ✅ **Raw Safe** - Raw `api_queries` untouched unless explicit retention set
 
 ### **Current Status Example:**
 ```
@@ -47,14 +52,19 @@ self.cache.cleanup_old_data(max_cache_age_hours=24)
 
 ## 🔧 **How the Cleanup Process Works**
 
-### **Cascading Deletion Order:**
+### **Structured Deletion Order (raw preserved):**
 ```sql
 1. DELETE FROM layovers WHERE flight_result_id IN (old_searches)
-2. DELETE FROM flight_segments WHERE flight_result_id IN (old_searches)  
+2. DELETE FROM flight_segments WHERE flight_result_id IN (old_searches)
 3. DELETE FROM flight_results WHERE search_id IN (old_searches)
 4. DELETE FROM price_insights WHERE search_id IN (old_searches)
 5. DELETE FROM flight_searches WHERE created_at < cutoff_time
-6. DELETE FROM api_queries WHERE created_at < cutoff_time
+-- Raw table (api_queries) intentionally untouched here
+```
+
+### **Optional Raw Prune (explicit retention):**
+```bash
+python Main/session_cleanup.py --raw-retention-days 30  # removes api_queries older than 30 days
 ```
 
 ### **Foreign Key Protection:**
@@ -93,11 +103,14 @@ Reference Data (Permanent):
 ├── Airports: JFK, LAX, POM, MNL... ♾️
 └── Airlines: QF, AA, UA, PR... ♾️
 
-Flight Data (24-hour rolling):
+Flight Data (24-hour rolling structured cache):
 ├── Search: POM→MNL on 2025-09-27 ⏰ 24h
 ├── Results: $1,391, $2,396... ⏰ 24h  
 ├── Segments: QF58, QF97... ⏰ 24h
 └── Cache: Hash keys and responses ⏰ 24h
+
+Raw API Responses (api_queries):
+└── Preserved indefinitely (unless explicit retention set)
 ```
 
 ## 💡 **Why This Design is Optimal**
@@ -108,4 +121,4 @@ Flight Data (24-hour rolling):
 4. **📈 Analytics**: Reference data accumulates for long-term insights
 5. **🛡️ Privacy**: Search history doesn't persist indefinitely
 
-The system maintains a **perfect balance** between data freshness, cost efficiency, and performance by using smart 24-hour rolling cleanup rather than crude daily resets!
+The system maintains a **clear separation**: structured cache stays fresh (24h), while raw data is durably retained for audit, replay, and advanced analytics—only pruned with explicit retention commands.
