@@ -81,10 +81,17 @@ form.addEventListener('submit', async (e) => {
   if(!email || !password) { show(errBox,'Email & password required'); return; }
   try {
   const tokens = await api('/auth/login','POST',{email,password});
-  show(okBox,'Login OK. Redirecting...');
+  show(okBox,'Login OK. Checking role...');
   localStorage.setItem('access_token', tokens.access_token);
   localStorage.setItem('refresh_token', tokens.refresh_token);
-  setTimeout(()=>{ window.location = '/dashboard'; }, 400);
+  try {
+    const meRes = await fetch('/auth/me',{headers:{'Authorization':'Bearer '+tokens.access_token}});
+    if(meRes.ok){
+      const me = await meRes.json();
+      if(me.is_admin){ window.location = '/admin'; return; }
+    }
+  } catch(e) { /* ignore and fallback */ }
+  window.location = '/dashboard';
   } catch(err){ show(errBox, err.message); }
 });
 </script>
