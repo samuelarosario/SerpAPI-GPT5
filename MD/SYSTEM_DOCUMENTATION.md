@@ -477,12 +477,13 @@ classDiagram
 ## 🔧 Configuration
 
 ### Environment Setup
-```bash
-# Set API key (Windows PowerShell)
+```powershell
+# Set API key (Windows PowerShell - persists for current user)
 [System.Environment]::SetEnvironmentVariable("SERPAPI_KEY", "your_key", "User")
 
-# Or create config file
-echo "your_serpapi_key" > Temp/api_key.txt
+# Or create a .env file at project root (NOT committed) with:
+# SERPAPI_KEY=your_key
+# Plaintext standalone key files (e.g. Temp/api_key.txt) are deprecated and disallowed.
 ```
 
 ### Database Configuration

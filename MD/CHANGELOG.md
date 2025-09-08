@@ -1,6 +1,8 @@
 # Changelog
 
 ## 2025-09-08
+- Fixed stale LOGGING_CONFIG.file_path referencing removed Temp directory (now points to Main/logs/flight_system.log).
+- Removed deprecated instruction to store API key in Temp/api_key.txt; standardized on environment variable or .env file.
 - Removed legacy `flight_search.py` CLI script (superseded by `EnhancedFlightSearchClient`).
 - Updated `agent-instructions.md` with dependency security policy and tests-only temp script policy.
 - Removed obsolete TODO from `enhanced_flight_search.py` (cache/storage already modularized).

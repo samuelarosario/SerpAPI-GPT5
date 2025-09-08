@@ -360,7 +360,8 @@ Enable detailed logging in `config.py`:
 ```python
 LOGGING_CONFIG = {
     'level': 'DEBUG',
-    'file_path': '../logs/debug.log'
+    # Optional override path (central logger defaults to Main/logs/flight_system.log)
+    'file_path': 'Main/logs/debug.log'
 }
 ```
 

@@ -51,7 +51,9 @@ PROCESSING_CONFIG = {
 LOGGING_CONFIG = {
     'level': 'INFO',
     'format': '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    'file_path': '../Temp/flight_api.log',
+    # Central logging actually uses core.logging_setup -> Main/logs/flight_system.log
+    # Kept here only for validation tooling; do NOT point to removed Temp/ directory.
+    'file_path': 'Main/logs/flight_system.log',
 }
 
 # Rate limiting configuration
