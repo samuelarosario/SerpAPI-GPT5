@@ -1,6 +1,7 @@
 """Cache management for flight searches (extracted from enhanced_flight_search)."""
 from __future__ import annotations
 import json, sqlite3, hashlib, logging, os
+from core.db_utils import open_connection
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
@@ -28,7 +29,7 @@ class FlightSearchCache:
     def search_cache(self, search_params: Dict[str, Any], max_age_hours: int = 24) -> Optional[Dict[str, Any]]:
         try:
             cache_key = self.generate_cache_key(search_params)
-            with sqlite3.connect(self.db_path) as conn:
+            with open_connection(self.db_path) as conn:
                 conn.row_factory = sqlite3.Row
                 cur = conn.cursor()
                 cutoff = datetime.now() - timedelta(hours=max_age_hours)
@@ -114,7 +115,7 @@ class FlightSearchCache:
         - This method only removes structured / derived tables to keep cache window fresh.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            with open_connection(self.db_path) as conn:
                 cur = conn.cursor()
                 cutoff = datetime.now() - timedelta(hours=max_age_hours)
                 cur.execute("SELECT search_id FROM flight_searches WHERE created_at < ?", (cutoff.isoformat(),))

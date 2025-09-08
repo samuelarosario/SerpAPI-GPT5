@@ -19,6 +19,7 @@ from config import (
     VALIDATION_RULES, get_api_key
 )
 from cache import FlightSearchCache
+from core.db_utils import open_connection  # centralized connection (foreign keys on)
 try:  # prefer real helper
     from DB.database_helper import SerpAPIDatabase  # type: ignore
 except ImportError:  # pragma: no cover
@@ -44,6 +45,8 @@ class EnhancedFlightSearchClient:
 
         # Initialize cache manager
         self.cache = FlightSearchCache(self.db_path)
+        # Throttle marker for periodic cleanup (epoch seconds)
+        self._last_cleanup_ts = None  # type: ignore
 
         # API configuration
         self.base_url = SERPAPI_CONFIG['base_url']
@@ -101,8 +104,12 @@ class EnhancedFlightSearchClient:
             Always attempts round-trip search for comprehensive data
         """
         
-        # Clean up old data first to maintain fresh 24-hour window
-        self.cache.cleanup_old_data(max_cache_age_hours)
+        # Throttled structured cache cleanup (at most every 15 minutes)
+        import time as _t
+        now = _t.time()
+        if (self._last_cleanup_ts is None) or (now - self._last_cleanup_ts > 900):
+            self.cache.cleanup_old_data(max_cache_age_hours)
+            self._last_cleanup_ts = now
         
         # Build search parameters
         search_params = {

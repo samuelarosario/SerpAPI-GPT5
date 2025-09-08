@@ -17,7 +17,12 @@ class SerpAPIDatabase:
     
     def get_connection(self):
         """Get database connection"""
-        return sqlite3.connect(self.db_path)
+        conn = sqlite3.connect(self.db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+        except Exception:
+            pass
+        return conn
     
     def insert_api_response(self, 
                           query_parameters: Dict[str, Any],
@@ -46,6 +51,7 @@ class SerpAPIDatabase:
         
         try:
             # Prepare data
+            # Legacy: Both query_timestamp and created_at exist; created_at is authoritative for freshness.
             query_timestamp = datetime.now().isoformat()
             query_params_json = json.dumps(query_parameters) if query_parameters else "{}"
             response_size = len(raw_response.encode('utf-8'))
