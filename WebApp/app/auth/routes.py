@@ -25,6 +25,17 @@ with engine.begin() as conn:
     # Ensure new schema present
 Base.metadata.create_all(bind=engine)
 
+# Lightweight migration: add is_admin column if missing (SQLite simple ADD COLUMN).
+try:
+    with engine.begin() as conn:
+        cols = conn.execute(text("PRAGMA table_info('User')")).fetchall()
+        col_names = {c[1] for c in cols}
+        if 'is_admin' not in col_names and 'User' in insp.get_table_names():
+            conn.execute(text("ALTER TABLE User ADD COLUMN is_admin BOOLEAN NOT NULL DEFAULT 0"))
+except Exception:
+    # Ignore migration failure to avoid startup crash; admin features may be degraded.
+    pass
+
 # Ensure a default demo user (user@local / password: user) exists for quick manual testing.
 def _ensure_default_user():
     try:
@@ -69,17 +80,23 @@ def register(data: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/login", response_model=schemas.TokenPair)
 def login(data: schemas.UserLogin, db: Session = Depends(get_db)):
     log_auth("login_attempt", email=data.email)
-    user = db.query(models.User).filter(models.User.email == data.email).first()
-    if not user:
-        log_auth("login_failure", email=data.email, success=False, detail="no_such_user")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    if not verify_password(data.password, user.password_hash):
-        log_auth("login_failure", email=data.email, success=False, detail="bad_password")
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    access = create_access_token(str(user.id))
-    refresh = create_refresh_token(str(user.id))
-    log_auth("login_success", email=data.email, success=True)
-    return schemas.TokenPair(access_token=access, refresh_token=refresh)
+    try:
+        user = db.query(models.User).filter(models.User.email == data.email).first()
+        if not user:
+            log_auth("login_failure", email=data.email, success=False, detail="no_such_user")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if not verify_password(data.password, user.password_hash):
+            log_auth("login_failure", email=data.email, success=False, detail="bad_password")
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        access = create_access_token(str(user.id))
+        refresh = create_refresh_token(str(user.id))
+        log_auth("login_success", email=data.email, success=True)
+        return schemas.TokenPair(access_token=access, refresh_token=refresh)
+    except HTTPException:
+        raise
+    except Exception as e:  # unexpected
+        log_auth("login_failure", email=data.email, success=False, detail=f"exception:{type(e).__name__}")
+        raise HTTPException(status_code=500, detail="Server error")
 
 @router.post("/refresh", response_model=schemas.TokenPair)
 def refresh(token: str):

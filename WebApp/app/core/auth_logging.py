@@ -3,7 +3,8 @@ from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-_LOG_PATH = Path("WebApp/logs/auth_events.jsonl")
+# Use a separate runtime_logs directory to reduce likelihood of reload loops when developing with --reload.
+_LOG_PATH = Path("WebApp/runtime_logs/auth_events.jsonl")
 _LOCK = threading.Lock()
 
 
