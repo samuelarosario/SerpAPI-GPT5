@@ -13,11 +13,20 @@ from urllib.parse import urlencode
 import hashlib
 import random
 from time import perf_counter
+import os, sys, pathlib
+
+# Ensure project and Main directories on path so `config` resolves when imported via tests
+ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
+MAIN_DIR = pathlib.Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.append(str(ROOT_DIR))
+if str(MAIN_DIR) not in sys.path:
+    sys.path.append(str(MAIN_DIR))
 
 from core.metrics import METRICS  # type: ignore
 from core.structured_logging import log_event, log_exception  # type: ignore
 
-from config import (
+from Main.config import (
     SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, 
     get_api_key
 )

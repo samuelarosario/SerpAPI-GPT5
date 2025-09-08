@@ -3,8 +3,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Dict, Any, Tuple, List, Optional
 import re
+import os, sys, pathlib
 
-from config import RATE_LIMIT_CONFIG, VALIDATION_RULES
+# Ensure Main directory on path for `config` import when module loaded in isolation during tests
+MAIN_DIR = pathlib.Path(__file__).resolve().parents[1]
+if str(MAIN_DIR) not in sys.path:
+    sys.path.append(str(MAIN_DIR))
+
+from Main.config import RATE_LIMIT_CONFIG, VALIDATION_RULES
 from date_utils import within_horizon as _within_horizon
 
 class RateLimiter:

@@ -4,18 +4,23 @@ Cache-first strategy; raw API data retained by default per retention policy.
 """
 import requests, json, time, logging, sqlite3, hashlib, os, sys, pathlib
 from time import perf_counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
 
 ROOT_DIR = pathlib.Path(__file__).resolve().parents[1]
+MAIN_DIR = pathlib.Path(__file__).resolve().parent
 if str(ROOT_DIR) not in sys.path:
-    sys.path.append(str(ROOT_DIR))
+    sys.path.append(str(ROOT_DIR))  # project root (for date_utils, etc.)
+if str(MAIN_DIR) not in sys.path:
+    sys.path.append(str(MAIN_DIR))  # explicit package path
 
-# Add DB directory to path for imports
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'DB'))
+# Add DB directory to path for imports (idempotent)
+DB_DIR = os.path.join(os.path.dirname(__file__), '..', 'DB')
+if DB_DIR not in sys.path:
+    sys.path.append(DB_DIR)
 
-from config import (
+from Main.config import (
     SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG,
     VALIDATION_RULES, get_api_key
 )
@@ -50,6 +55,13 @@ class EnhancedFlightSearchClient:
         self.cache = FlightSearchCache(self.db_path)
         # Throttle marker for periodic cleanup (epoch seconds)
         self._last_cleanup_ts = None  # type: ignore
+
+        # Ensure supporting unique constraint for price_insights (logical 1:1)
+        try:
+            with sqlite3.connect(self.db_path) as _c:
+                _c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_price_insights_search_unique ON price_insights(search_id)")
+        except Exception:
+            pass
 
         # API configuration
         self.base_url = SERPAPI_CONFIG['base_url']
@@ -235,6 +247,10 @@ class EnhancedFlightSearchClient:
                     log_event('efs.store.structured.success', search_id=search_id)
             except Exception as struct_err:
                 self.logger.error(f"Structured storage failure: {struct_err}")
+                try:
+                    METRICS.inc('structured_storage_failures')
+                except Exception:
+                    pass
                 log_exception('efs.store.structured.error', search_id=search_id, exc=struct_err)
 
             duration_ms = int((perf_counter() - op_start) * 1000)

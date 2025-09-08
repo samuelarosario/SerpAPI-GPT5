@@ -21,6 +21,11 @@ class FlightSearchCache:
         try:
             with open_connection(self.db_path) as conn:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_flight_searches_cache_key ON flight_searches(cache_key)")
+                # Ensure composite route+date index exists (performance improvement)
+                try:
+                    conn.execute("CREATE INDEX IF NOT EXISTS idx_flight_searches_route_date ON flight_searches(departure_airport_code, arrival_airport_code, outbound_date)")
+                except Exception:
+                    pass
         except Exception as e:  # pragma: no cover
             self.logger.warning(f"Could not ensure cache_key index: {e}")
 

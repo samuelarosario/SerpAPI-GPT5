@@ -430,6 +430,25 @@ graph TD
 ---
 
 ## 📊 Performance Metrics
+### Import & Packaging Conventions (Stability Note)
+All runtime modules now import configuration as `from Main.config import ...` to avoid Windows-specific path inconsistencies that produced `ModuleNotFoundError: config` and duplicate module loads (e.g., `core.metrics` vs `Main.core.metrics`).
+
+Guidelines:
+1. Do NOT use bare `import config`.
+2. Keep `Main/` as a package (retain `__init__.py`).
+3. If adding new subpackages under `Main/`, prefer explicit `from Main.<subpkg> import X`.
+4. Tests should import shared objects from the canonical path (e.g., `from core.metrics import METRICS`), never mixed forms.
+
+Diagnostics:
+`python - <<EOF` snippet to verify singleton metrics instance:
+```
+from core.metrics import METRICS as A
+from Main.core.metrics import METRICS as B
+assert A is B, 'Duplicate metrics instance detected (path misconfiguration)'
+```
+This assertion should always pass; if it fails, check for ad-hoc sys.path mutations in new code.
+
+Structured storage failure metric (`structured_storage_failures`) increments when `_store_structured_data` raises; failure is non-fatal and overall search still returns success. Covered by `tests/test_structured_storage_failure_metric.py`.
 
 ### Function Execution Times (Typical)
 - `search_cache()`: 5-15ms (database query)

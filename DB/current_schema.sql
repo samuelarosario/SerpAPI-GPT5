@@ -1,19 +1,70 @@
--- Current Database Schema for SerpAPI Flight Search System
--- Generated on: 2025-09-06T12:56:54.218609
--- Source: Main_DB.db
--- 
--- ⚠️  SCHEMA MODIFICATION WARNING ⚠️
--- Database schema changes are STRICTLY PROHIBITED unless explicitly
--- double-confirmed by the project owner. Any schema modifications
--- require explicit approval and must be thoroughly tested.
--- 
--- This schema represents the current production database structure
--- and should be considered the canonical reference.
+-- Auto-generated schema snapshot
+-- Generated: 2025-09-08T14:24:34.106140
+-- Tables: 12
+-- Table List: airlines, airports, api_queries, database_metadata, flight_results, flight_searches, flight_segments, layovers, migration_history, price_insights, route_analytics, schema_version
+-- Schema Checksum: 98115d8296267ed103fb319443654e904ecac41da00114a5d2e89a57d1c28d61
 
--- =============================================================================
--- TABLE DEFINITIONS
--- =============================================================================
+-- INDEX: idx_airlines_code
+CREATE INDEX idx_airlines_code ON airlines(airline_code);
 
+-- INDEX: idx_airports_code
+CREATE INDEX idx_airports_code ON airports(airport_code);
+
+-- INDEX: idx_created_at
+CREATE INDEX idx_created_at ON api_queries(created_at);
+
+-- INDEX: idx_flight_results_price
+CREATE INDEX idx_flight_results_price ON flight_results(total_price);
+
+-- INDEX: idx_flight_results_search_id
+CREATE INDEX idx_flight_results_search_id ON flight_results(search_id);
+
+-- INDEX: idx_flight_searches_airports
+CREATE INDEX idx_flight_searches_airports ON flight_searches(departure_airport_code, arrival_airport_code);
+
+-- INDEX: idx_flight_searches_cache_key
+CREATE INDEX idx_flight_searches_cache_key ON flight_searches(cache_key);
+
+-- INDEX: idx_flight_searches_date
+CREATE INDEX idx_flight_searches_date ON flight_searches(outbound_date);
+
+-- INDEX: idx_flight_searches_route_date
+CREATE INDEX idx_flight_searches_route_date ON flight_searches(departure_airport_code, arrival_airport_code, outbound_date);
+
+-- INDEX: idx_flight_searches_search_id
+CREATE INDEX idx_flight_searches_search_id ON flight_searches(search_id);
+
+-- INDEX: idx_flight_segments_airline
+CREATE INDEX idx_flight_segments_airline ON flight_segments(airline_code);
+
+-- INDEX: idx_flight_segments_airports
+CREATE INDEX idx_flight_segments_airports ON flight_segments(departure_airport_code, arrival_airport_code);
+
+-- INDEX: idx_flight_segments_result_id
+CREATE INDEX idx_flight_segments_result_id ON flight_segments(flight_result_id);
+
+-- INDEX: idx_layovers_airport
+CREATE INDEX idx_layovers_airport ON layovers(airport_code);
+
+-- INDEX: idx_layovers_result_id
+CREATE INDEX idx_layovers_result_id ON layovers(flight_result_id);
+
+-- INDEX: idx_price_insights_search_id
+CREATE INDEX idx_price_insights_search_id ON price_insights(search_id);
+
+-- INDEX: idx_price_insights_search_unique
+CREATE UNIQUE INDEX idx_price_insights_search_unique ON price_insights(search_id);
+
+-- INDEX: idx_query_type
+CREATE INDEX idx_query_type ON api_queries(query_type);
+
+-- INDEX: idx_route_analytics_airports
+CREATE INDEX idx_route_analytics_airports ON route_analytics(departure_airport_code, arrival_airport_code);
+
+-- INDEX: idx_route_analytics_route
+CREATE INDEX idx_route_analytics_route ON route_analytics(route_key);
+
+-- TABLE: airlines
 CREATE TABLE airlines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     airline_code TEXT UNIQUE NOT NULL,
@@ -24,6 +75,7 @@ CREATE TABLE airlines (
     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
+-- TABLE: airports
 CREATE TABLE airports (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     airport_code TEXT UNIQUE NOT NULL,
@@ -38,24 +90,20 @@ CREATE TABLE airports (
     last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE api_queries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    query_parameters TEXT,
-    raw_response TEXT NOT NULL,
-    query_type TEXT,
-    status_code INTEGER,
-    response_size INTEGER,
-    api_endpoint TEXT,
-    search_term TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-);
+-- TABLE: api_queries
+CREATE TABLE "api_queries" (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    query_parameters TEXT,
+                    raw_response TEXT NOT NULL,
+                    query_type TEXT,
+                    status_code INTEGER,
+                    response_size INTEGER,
+                    api_endpoint TEXT,
+                    search_term TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                );
 
-CREATE TABLE schema_version (
-    id INTEGER PRIMARY KEY CHECK(id=1),
-    version TEXT NOT NULL,
-    applied_at TEXT NOT NULL
-);
-
+-- TABLE: database_metadata
 CREATE TABLE database_metadata (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 database_version TEXT,
@@ -64,6 +112,7 @@ CREATE TABLE database_metadata (
                 total_queries INTEGER DEFAULT 0
             );
 
+-- TABLE: flight_results
 CREATE TABLE flight_results (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     search_id TEXT NOT NULL,
@@ -84,6 +133,7 @@ CREATE TABLE flight_results (
     FOREIGN KEY (search_id) REFERENCES flight_searches(search_id)
 );
 
+-- TABLE: flight_searches
 CREATE TABLE flight_searches (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     search_id TEXT UNIQUE NOT NULL,
@@ -116,6 +166,7 @@ CREATE TABLE flight_searches (
     FOREIGN KEY (api_query_id) REFERENCES api_queries(id)
 );
 
+-- TABLE: flight_segments
 CREATE TABLE flight_segments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     flight_result_id INTEGER NOT NULL,
@@ -143,6 +194,7 @@ CREATE TABLE flight_segments (
     FOREIGN KEY (airline_code) REFERENCES airlines(airline_code)
 );
 
+-- TABLE: layovers
 CREATE TABLE layovers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     flight_result_id INTEGER NOT NULL,
@@ -155,6 +207,16 @@ CREATE TABLE layovers (
     FOREIGN KEY (airport_code) REFERENCES airports(airport_code)
 );
 
+-- TABLE: migration_history
+CREATE TABLE migration_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    version TEXT NOT NULL,
+                    applied_at TEXT NOT NULL,
+                    description TEXT,
+                    checksum TEXT
+                );
+
+-- TABLE: price_insights
 CREATE TABLE price_insights (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     search_id TEXT NOT NULL,
@@ -167,6 +229,7 @@ CREATE TABLE price_insights (
     FOREIGN KEY (search_id) REFERENCES flight_searches(search_id)
 );
 
+-- TABLE: route_analytics
 CREATE TABLE route_analytics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     route_key TEXT UNIQUE NOT NULL, -- "departure_code-arrival_code"
@@ -184,55 +247,5 @@ CREATE TABLE route_analytics (
     FOREIGN KEY (arrival_airport_code) REFERENCES airports(airport_code)
 );
 
--- =============================================================================
--- INDEX DEFINITIONS  
--- =============================================================================
-
-CREATE INDEX idx_airlines_code ON airlines(airline_code);
-
-CREATE INDEX idx_airports_code ON airports(airport_code);
-
-CREATE INDEX idx_created_at 
-            ON api_queries(created_at)
-        ;
-
-CREATE INDEX idx_flight_results_price ON flight_results(total_price);
-
-CREATE INDEX idx_flight_results_search_id ON flight_results(search_id);
-
-CREATE INDEX idx_flight_searches_airports ON flight_searches(departure_airport_code, arrival_airport_code);
-
-CREATE INDEX idx_flight_searches_date ON flight_searches(outbound_date);
-
-CREATE INDEX idx_flight_searches_search_id ON flight_searches(search_id);
-
-CREATE INDEX idx_flight_segments_airline ON flight_segments(airline_code);
-
-CREATE INDEX idx_flight_segments_airports ON flight_segments(departure_airport_code, arrival_airport_code);
-
-CREATE INDEX idx_flight_segments_result_id ON flight_segments(flight_result_id);
-
-CREATE INDEX idx_layovers_airport ON layovers(airport_code);
-
-CREATE INDEX idx_layovers_result_id ON layovers(flight_result_id);
-
-CREATE INDEX idx_price_insights_search_id ON price_insights(search_id);
-
-CREATE INDEX idx_query_type 
-            ON api_queries(query_type)
-        ;
-
-CREATE INDEX idx_route_analytics_airports ON route_analytics(departure_airport_code, arrival_airport_code);
-
-CREATE INDEX idx_route_analytics_route ON route_analytics(route_key);
-
--- =============================================================================
--- SCHEMA SUMMARY
--- =============================================================================
--- Tables: 10
--- Tables: 11
--- Tables List: airlines, airports, api_queries, schema_version, database_metadata, flight_results, flight_searches, flight_segments, layovers, price_insights, route_analytics
--- Generated: 2025-09-06T12:56:54.218663
--- 
--- This schema file is automatically generated from the current database
--- and represents the actual production structure.
+-- TABLE: schema_version
+CREATE TABLE schema_version (id INTEGER PRIMARY KEY CHECK(id=1), version TEXT NOT NULL, applied_at TEXT NOT NULL);

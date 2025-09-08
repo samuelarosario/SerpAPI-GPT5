@@ -17,6 +17,7 @@ class _Metrics:
             'cache_hits': 0,
             'cache_misses': 0,
             'retry_attempts': 0,
+            'structured_storage_failures': 0,
         }
     def inc(self, name: str, value: int = 1):
         with _lock:

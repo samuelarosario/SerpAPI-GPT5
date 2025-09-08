@@ -219,7 +219,7 @@ class SerpAPIDatabase:
         finally:
             conn.close()
 
-    def generate_schema_snapshot(self, output_path: Optional[str] = None) -> str:
+    def generate_schema_snapshot(self, output_path: Optional[str] = None, *, force: bool = False) -> str:
         if output_path is None:
             base_dir = os.path.dirname(os.path.abspath(self.db_path)) or '.'
             if os.path.basename(base_dir).lower() != 'db':
@@ -234,10 +234,22 @@ class SerpAPIDatabase:
                 "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%'"
             )
             rows = cur.fetchall()
-            lines = ["-- Auto-generated schema snapshot", f"-- Generated: {datetime.now().isoformat()}"]
+            # Enforce naming policy: disallow lingering temp/dev tables
+            disallowed_prefixes = ("temp_", "tmp_", "dev_", "test_")
+            unexpected = [r[0] for r in rows if r[1] == 'table' and r[0].startswith(disallowed_prefixes)]
+            if unexpected and not force:
+                raise RuntimeError(f"Refusing to generate snapshot; unexpected tables present: {unexpected}")
+            # Build header (do not include checksum yet)
+            lines = [
+                "-- Auto-generated schema snapshot",
+                f"-- Generated: {datetime.now().isoformat()}"
+            ]
             table_names = [r[0] for r in rows if r[1] == 'table']
             lines.append(f"-- Tables: {len(table_names)}")
             lines.append(f"-- Table List: {', '.join(sorted(table_names))}")
+            # Compute checksum of current schema (tables + indexes)
+            checksum = self.compute_schema_checksum(conn)
+            lines.append(f"-- Schema Checksum: {checksum}")
             lines.append("")
             for name, typ, sql in sorted(rows, key=lambda r: (r[1], r[0])):
                 lines.append(f"-- {typ.upper()}: {name}")
@@ -246,7 +258,6 @@ class SerpAPIDatabase:
                 lines.append("")
             with open(output_path, 'w', encoding='utf-8') as f:
                 f.write("\n".join(lines))
-            checksum = self.compute_schema_checksum(conn)
             try:
                 cur.execute(
                     "UPDATE migration_history SET checksum=? WHERE version=? AND (checksum IS NULL OR checksum='')",
@@ -409,226 +420,52 @@ def test_database_operations():  # pragma: no cover - retained from original for
 
 
 if __name__ == "__main__":  # pragma: no cover
-    test_database_operations()
-    
-    def insert_api_response(self, 
-                          query_parameters: Dict[str, Any],
-                          raw_response: str,
-                          query_type: str = "search",
-                          status_code: int = 200,
-                          api_endpoint: str = "serpapi",
-                          search_term: str = "") -> int:
-        """
-        Insert API response data into database
-        
-        Args:
-            query_parameters: The parameters used for the API query
-            raw_response: Complete raw response from API
-            query_type: Type of query (search, images, news, etc.)
-            status_code: HTTP status code
-            api_endpoint: API endpoint used
-            search_term: Search term used
-            
-        Returns:
-            int: ID of inserted record
-        """
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Prepare data
-            # Post-migration: query_timestamp column removed; created_at default handles capture.
-            query_params_json = json.dumps(query_parameters) if query_parameters else "{}"
-            response_size = len(raw_response.encode('utf-8'))
-            
-            # Insert data
-            cursor.execute('''
-                INSERT INTO api_queries 
-                (query_parameters, raw_response, query_type, status_code, response_size, api_endpoint, search_term)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (query_params_json, raw_response, query_type,
-                  status_code, response_size, api_endpoint, search_term))
-            
-            record_id = cursor.lastrowid
-            
-            # Update metadata
-            self._update_metadata(cursor)
-            
-            conn.commit()
-            logging.getLogger(__name__).info(f"Inserted api_queries record id={record_id}")
-            return record_id
-            
-        except sqlite3.Error as e:
-            logging.getLogger(__name__).error(f"Error inserting API response: {e}")
-            conn.rollback()
-            raise
-        
-        finally:
-            conn.close()
-    
-    def get_api_responses(self, 
-                         query_type: Optional[str] = None,
-                         search_term: Optional[str] = None,
-                         limit: int = 100) -> List[Dict]:
-        """
-        Retrieve API responses from database
-        
-        Args:
-            query_type: Filter by query type
-            search_term: Filter by search term
-            limit: Maximum number of records to return
-            
-        Returns:
-            List[Dict]: List of API response records
-        """
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            # Build query
-            query = "SELECT * FROM api_queries WHERE 1=1"
-            params = []
-            
-            if query_type:
-                query += " AND query_type = ?"
-                params.append(query_type)
-            
-            if search_term:
-                query += " AND search_term LIKE ?"
-                params.append(f"%{search_term}%")
-            
-            query += " ORDER BY created_at DESC LIMIT ?"
-            params.append(limit)
-            
-            cursor.execute(query, params)
-            
-            # Get column names
-            columns = [description[0] for description in cursor.description]
-            
-            # Fetch and format results
-            rows = cursor.fetchall()
-            results = []
-            
-            for row in rows:
-                record = dict(zip(columns, row))
-                # Parse JSON fields
-                if record['query_parameters']:
-                    try:
-                        record['query_parameters'] = json.loads(record['query_parameters'])
-                    except json.JSONDecodeError:
-                        pass
-                results.append(record)
-            
-            return results
-            
-        except sqlite3.Error as e:
-            logging.getLogger(__name__).error(f"Error retrieving API responses: {e}")
-            raise
-        
-        finally:
-            conn.close()
-    
-    def get_database_stats(self) -> Dict[str, Any]:
-        """Get database statistics"""
-        
-        conn = self.get_connection()
-        cursor = conn.cursor()
-        
-        try:
-            stats = {}
-            
-            # Total records
-            cursor.execute("SELECT COUNT(*) FROM api_queries")
-            stats['total_records'] = cursor.fetchone()[0]
-            
-            # Records by type
-            cursor.execute("""
-                SELECT query_type, COUNT(*) 
-                FROM api_queries 
-                GROUP BY query_type
-            """)
-            stats['records_by_type'] = dict(cursor.fetchall())
-            
-            # Date range
-            cursor.execute("""
-                SELECT MIN(created_at), MAX(created_at) 
-                FROM api_queries
-            """)
-            date_range = cursor.fetchone()
-            stats['date_range'] = {
-                'earliest': date_range[0],
-                'latest': date_range[1]
-            }
-            
-            # Database metadata
-            cursor.execute("SELECT * FROM database_metadata WHERE id = 1")
-            metadata = cursor.fetchone()
-            if metadata:
-                stats['metadata'] = {
-                    'database_version': metadata[1],
-                    'created_date': metadata[2],
-                    'last_modified': metadata[3]
-                }
-            
-            return stats
-            
-        except sqlite3.Error as e:
-            logging.getLogger(__name__).error(f"Error getting database stats: {e}")
-            raise
-        
-        finally:
-            conn.close()
-    
-    def _update_metadata(self, cursor):
-        """Update database metadata"""
-        cursor.execute("""
-            UPDATE database_metadata 
-            SET last_modified = ?, 
-                total_queries = (SELECT COUNT(*) FROM api_queries)
-            WHERE id = 1
-        """, (datetime.now().isoformat(),))
+    import argparse, sys, json as _json
+    parser = argparse.ArgumentParser(description="Database helper utility")
+    parser.add_argument('--checksum', action='store_true', help='Print current schema checksum and exit')
+    parser.add_argument('--snapshot', action='store_true', help='Regenerate schema snapshot file and print checksum')
+    parser.add_argument('--db', default='DB/Main_DB.db', help='Path to database file')
+    parser.add_argument('--test-ops', action='store_true', help='Run manual operations smoke test')
+    parser.add_argument('--json', action='store_true', help='Emit JSON output')
+    parser.add_argument('--force', action='store_true', help='Force snapshot even if temp/dev tables present')
+    args = parser.parse_args()
 
-def test_database_operations():
-    """Test database helper functions"""
-    
-    print("🧪 Testing database operations...")
-    
-    db = SerpAPIDatabase()
-    
-    # Test insert
-    test_params = {
-        "q": "test search",
-        "engine": "google",
-        "location": "United States"
-    }
-    
-    test_response = json.dumps({
-        "search_metadata": {"status": "Success"},
-        "organic_results": [
-            {"title": "Test Result", "link": "https://example.com"}
-        ]
-    })
-    
-    record_id = db.insert_api_response(
-        query_parameters=test_params,
-        raw_response=test_response,
-        query_type="google_search",
-        search_term="test search"
-    )
-    
-    print(f"✅ Test record inserted with ID: {record_id}")
-    
-    # Test retrieve
-    results = db.get_api_responses(limit=5)
-    print(f"✅ Retrieved {len(results)} records")
-    
-    # Test stats
-    stats = db.get_database_stats()
-    print(f"✅ Database stats: {stats['total_records']} total records")
-    
-    print("🎉 Database operations test completed successfully!")
+    db = SerpAPIDatabase(args.db)
 
-if __name__ == "__main__":
-    test_database_operations()
+    def _emit(obj, code=0, is_error=False):
+        if args.json:
+            print(_json.dumps(obj, separators=(',',':')))
+        else:
+            if isinstance(obj, dict) and 'checksum' in obj:
+                # Print checksum only for backwards compatibility in non-JSON modes
+                if 'error' in obj and is_error:
+                    print(f"ERROR: {obj['error']}", file=sys.stderr)
+                else:
+                    print(obj.get('checksum') or obj)
+            else:
+                if is_error:
+                    print(f"ERROR: {obj}", file=sys.stderr)
+                else:
+                    print(obj)
+        sys.exit(code)
+
+    if args.checksum:
+        try:
+            with db.get_connection() as conn:
+                cs = db.compute_schema_checksum(conn)
+            _emit({'mode':'checksum','checksum':cs,'db':args.db})
+        except Exception as e:
+            _emit({'mode':'checksum','error':str(e),'db':args.db}, code=2, is_error=True)
+
+    if args.snapshot:
+        try:
+            cs = db.generate_schema_snapshot(force=args.force)
+            _emit({'mode':'snapshot','checksum':cs,'forced':args.force,'db':args.db,'status':'ok'})
+        except Exception as e:
+            _emit({'mode':'snapshot','error':str(e),'forced':args.force,'db':args.db,'status':'failed'}, code=2, is_error=True)
+
+    if args.test_ops:
+        test_database_operations()
+        sys.exit(0)
+
+    parser.print_help()

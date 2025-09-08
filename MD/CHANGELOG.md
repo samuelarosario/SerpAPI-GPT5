@@ -7,6 +7,11 @@
 - Instrumented `serpapi_client` and `enhanced_flight_search` with lifecycle events: `search.start/success/error`, `api.attempt/success/retry/failed/exception`, cache hit/miss, raw & structured storage success/error, week range per-day events, completion summary.
 - Replaced deprecated `datetime.utcnow()` with timezone-aware `datetime.now(datetime.UTC)` for event timestamps.
 - Added metrics test (`tests/test_metrics.py`); total tests increased to 20 (all passing).
+### Import Path Stabilization (2025-09-08)
+- Standardized all internal imports to use `from Main.config import ...` instead of relying on ambiguous `config` resolution.
+- Added `Main/__init__.py` (namespace initializer) and minimal, centralized path bootstrap in runtime modules.
+- Removed duplicate module loading that previously caused separate `METRICS` instances (e.g., `core.metrics` vs `Main.core.metrics`).
+- Added `structured_storage_failures` counter and test (`test_structured_storage_failure_metric.py`).
 
 - Added automated schema migration (drop legacy query_timestamp) with safety & test coverage.
 - Updated cache logging to include search_id context; unified jitter per spec.

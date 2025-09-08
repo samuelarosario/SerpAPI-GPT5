@@ -173,7 +173,7 @@ def test_rate_limiter_boundary():
     # Fill minute window to limit
     if MAIN_DIR not in sys.path:
         sys.path.insert(0, MAIN_DIR)
-    from config import RATE_LIMIT_CONFIG  # type: ignore
+    from Main.config import RATE_LIMIT_CONFIG  # type: ignore
     for _ in range(RATE_LIMIT_CONFIG['requests_per_minute']):
         rl.record_request()
     assert not rl.can_make_request(), 'Rate limiter should block immediately after hitting minute quota'
