@@ -86,8 +86,45 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
         const f=document.getElementById('fsForm');
         const statusEl=document.getElementById('status');
         const resEl=document.getElementById('results');
-        function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; return Promise.reject();} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
-        f.addEventListener('submit',async(e)=>{ e.preventDefault(); resEl.innerHTML=''; const o=origin.value.trim().toUpperCase(); const d=destination.value.trim().toUpperCase(); const dt=date.value; if(!o||!d||!dt){ statusEl.textContent='All fields required.'; return;} statusEl.textContent='Searching...'; try { const r=await authFetch(`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`); if(!r.ok){ const txt=await r.text(); statusEl.textContent='Error: '+txt; return;} const data=await r.json(); if(!data.success){ statusEl.textContent='No results: '+(data.error||'unknown'); return;} statusEl.textContent=`Source: ${data.source} | Search ID: ${data.search_id||'n/a'}`; const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]); if(flights.length===0){ resEl.innerHTML='<p class="meta">No flights found.</p>'; return;} let html='<div class="grid">'; flights.slice(0,30).forEach(flt=>{ html+=`<div class='card'><div class='src'>${flt.flights?flt.flights.join(' • '): (flt.flight || 'Flight')}</div><div class='price'>${flt.price||'N/A'}</div><div class='meta'>${flt.departure_airport||''} → ${flt.arrival_airport||''}</div><div class='meta'>Dur: ${(flt.duration||'').toString().replace('duration:','')}</div><div class='tags'>${flt.type?`<span>${flt.type}</span>`:''}${flt.airline?`<span>${flt.airline}</span>`:''}</div></div>`; }); html+='</div>'; resEl.innerHTML=html; } catch(err){ statusEl.textContent='Error '+err.message; }
+        const originInput=document.getElementById('origin');
+        const destinationInput=document.getElementById('destination');
+        const dateInput=document.getElementById('date');
+        function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; return Promise.reject(new Error('Not authenticated'));} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+        f.addEventListener('submit',async(e)=>{ 
+            e.preventDefault();
+            resEl.innerHTML='';
+            const o=(originInput.value||'').trim().toUpperCase();
+            const d=(destinationInput.value||'').trim().toUpperCase();
+            const dt=dateInput.value;
+            if(!o||!d||!dt){ statusEl.textContent='All fields required.'; return; }
+            statusEl.textContent='Searching...';
+            try { 
+                const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
+                console.debug('Flight search request', url);
+                const r=await authFetch(url);
+                if(!r.ok){ const txt=await r.text(); statusEl.textContent='Error: '+txt; console.error('Search HTTP error', txt); return; }
+                const data=await r.json();
+                console.debug('Flight search response', data);
+                if(!data.success){ statusEl.textContent='No results: '+(data.error||'unknown'); return; }
+                statusEl.textContent=`Source: ${data.source} | Search ID: ${data.search_id||'n/a'}`;
+                const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
+                if(flights.length===0){ resEl.innerHTML='<p class="meta">No flights found.</p>'; return; }
+                let html='<div class="grid">';
+                flights.slice(0,30).forEach(flt=>{ 
+                    html+=`<div class='card'>
+                        <div class='src'>${flt.flights?flt.flights.join(' • '):(flt.flight||'Flight')}</div>
+                        <div class='price'>${flt.price||'N/A'}</div>
+                        <div class='meta'>${flt.departure_airport||''} → ${flt.arrival_airport||''}</div>
+                        <div class='meta'>Dur: ${(flt.duration||'').toString().replace('duration:','')}</div>
+                        <div class='tags'>${flt.type?`<span>${flt.type}</span>`:''}${flt.airline?`<span>${flt.airline}</span>`:''}</div>
+                    </div>`; 
+                });
+                html+='</div>';
+                resEl.innerHTML=html; 
+            } catch(err){ 
+                console.error('Flight search exception', err);
+                statusEl.textContent='Error: '+err.message; 
+            }
         });
         </script>
         </main></body></html>""")
