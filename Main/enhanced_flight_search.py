@@ -755,6 +755,16 @@ class EnhancedFlightSearchClient:
                 if 'price_insights' in api_response:
                     self._insert_price_insights(cur, search_id, api_response['price_insights'])
                 conn.commit()
+                try:
+                    # Post-commit verification (counts)
+                    cur2 = conn.cursor()
+                    cur2.execute("SELECT COUNT(*) FROM flight_results WHERE search_id=?", (search_id,))
+                    fr_count = cur2.fetchone()[0]
+                    cur2.execute("SELECT COUNT(*) FROM flight_segments fs JOIN flight_results fr ON fs.flight_result_id=fr.id WHERE fr.search_id=?", (search_id,))
+                    seg_count = cur2.fetchone()[0]
+                    self.logger.info(f"Structured storage committed search_id={search_id} results={fr_count} segments={seg_count} cache_key={cache_key[:12]}")
+                except Exception:  # pragma: no cover
+                    pass
         except Exception as e:  # pragma: no cover
             # Log full class name to aid debugging of FK vs other failures
             self.logger.error(f"Structured storage error: {e.__class__.__name__}: {e}")
