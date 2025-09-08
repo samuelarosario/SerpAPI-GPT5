@@ -11,23 +11,18 @@ mindmap
   root((SerpAPI System))
     Search Engine
       Enhanced Flight Search Client
-        search_flights()
-        _validate_search_params()
-        _extract_airline_iata_code()
-        _store_airline_info()
-        _store_airport_info()
-        _calculate_cache_age()
+  search_flights()
+  _validate_search_params()
+  _store_structured_data()  *
+  _calculate_cache_age()    *
     // Deprecated (Sept 2025): Approval Required Client (removed)
     API Integration
       SerpAPI Client
         search_round_trip()
         search_one_way()
         search_multi_city()
-        _validate_parameters()
-        _build_search_url()
-        _make_request()
-        _parse_response()
-        _handle_api_errors()
+  _make_request()
+  (URL build & parse steps are inline in current implementation)
       Rate Limiter
         check_rate_limit()
         wait_if_needed()
@@ -40,10 +35,10 @@ mindmap
         _update_metadata()
       Flight Search Cache
         search_cache()
-        store_flight_data()
         cleanup_old_data()
-        _generate_cache_key()
-  // Deprecated (Sept 2025): Approval System (APICallMonitor)
+        generate_cache_key()
+  // * Items marked are internal helpers not part of public API
+  // Deprecated: Approval System (removed Sept 2025)
     Validation
       Flight Search Validator
         validate_airport_code()

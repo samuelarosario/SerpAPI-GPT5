@@ -275,13 +275,12 @@ erDiagram
     
     API_QUERIES {
         INTEGER id PK
-        TEXT query_timestamp        # (legacy; created_at is authoritative for freshness)
         TEXT query_parameters
         TEXT raw_response
         TEXT query_type
         INTEGER status_code
         TEXT search_term
-        DATETIME created_at         # used for retention & cache recency metrics
+        DATETIME created_at  # canonical ingestion timestamp
     }
     
     AIRPORTS ||--o{ FLIGHT_SEGMENTS : "departure"

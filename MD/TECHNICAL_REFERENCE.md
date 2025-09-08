@@ -206,6 +206,10 @@ Future Extensions (P2/P3):
 - Add metrics.export.* for external sink operations
 
 ### 1. `FlightSearchCache.search_cache()` - Cache Lookup
+### Legacy Processor Deprecation
+
+`flight_processor.py` is retained only for historical reference. All structured ingestion now occurs inside `EnhancedFlightSearchClient._store_structured_data`. The legacy module will be removed after a deprecation window; do not extend it.
+
 
 ```mermaid
 flowchart TD

@@ -3,6 +3,7 @@
 Cache-first strategy; raw API data retained by default per retention policy.
 """
 import requests, json, time, logging, sqlite3, hashlib, os, sys, pathlib
+from time import perf_counter
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Tuple, Union
 from urllib.parse import urlencode
@@ -30,6 +31,8 @@ except ImportError:  # pragma: no cover
             return None
 
 from core.common_validation import RateLimiter, FlightSearchValidator  # type: ignore
+from core.structured_logging import log_event, log_exception  # type: ignore
+from core.metrics import METRICS  # type: ignore
 
 class EnhancedFlightSearchClient:
     """Enhanced Flight Search Client with Local Database Cache"""
@@ -65,20 +68,20 @@ class EnhancedFlightSearchClient:
         from serpapi_client import SerpAPIFlightClient
         self.api_client = SerpAPIFlightClient(self.api_key) if self.api_key else None
     
-    def search_flights(self, 
-                      departure_id: str,
-                      arrival_id: str,
-                      outbound_date: str,
-                      return_date: Optional[str] = None,
-                      adults: int = 1,
-                      children: int = 0,
-                      infants_in_seat: int = 0,
-                      infants_on_lap: int = 0,
-                      travel_class: int = 1,
-                      currency: str = "USD",
-                      max_cache_age_hours: int = 24,
-                      force_api: bool = False,
-                      **kwargs) -> Dict[str, Any]:
+    def search_flights(self,
+                       departure_id: str,
+                       arrival_id: str,
+                       outbound_date: str,
+                       return_date: Optional[str] = None,
+                       adults: int = 1,
+                       children: int = 0,
+                       infants_in_seat: int = 0,
+                       infants_on_lap: int = 0,
+                       travel_class: int = 1,
+                       currency: str = "USD",
+                       max_cache_age_hours: int = 24,
+                       force_api: bool = False,
+                       **kwargs) -> Dict[str, Any]:
         """
         Smart flight search that checks cache first, then API
         Defaults to round-trip searches for comprehensive data capture
@@ -103,7 +106,7 @@ class EnhancedFlightSearchClient:
             Flight search results with cache/API source indicated
             Always attempts round-trip search for comprehensive data
         """
-        
+        op_start = perf_counter()
         # Throttled structured cache cleanup (at most every 15 minutes)
         import time as _t
         now = _t.time()
@@ -152,7 +155,9 @@ class EnhancedFlightSearchClient:
                 'errors': errors,
                 'source': 'validation'
             }
-        
+        # Pre-compute cache key for logging
+        cache_key = self.cache.generate_cache_key(search_params)
+        log_event('efs.search.start', route=f"{departure_id}-{arrival_id}", outbound=outbound_date, has_return=bool(return_date), cache_key=cache_key)
         # Step 1: Check local cache first (unless forced to use API)
         if not force_api:
             self.logger.info("Checking local database cache...")
@@ -160,6 +165,9 @@ class EnhancedFlightSearchClient:
             
             if cached_result:
                 self.logger.info(f"Using cached data from {cached_result['cache_timestamp']}")
+                log_event('efs.cache.hit', search_id=cached_result.get('search_id'), cache_key=cache_key)
+                duration_ms = int((perf_counter() - op_start) * 1000)
+                log_event('efs.search.success', search_id=cached_result.get('search_id'), source='cache', duration_ms=duration_ms)
                 return {
                     'success': True,
                     'source': 'cache',
@@ -167,11 +175,15 @@ class EnhancedFlightSearchClient:
                     'cache_age_hours': self._calculate_cache_age(cached_result['cache_timestamp']),
                     'message': 'Data retrieved from local cache'
                 }
+            else:
+                log_event('efs.cache.miss', cache_key=cache_key)
         
         # Step 2: No cache found or forced API - use API
         self.logger.info("Cache miss or forced API - making API request...")
+        log_event('efs.api.request', route=f"{departure_id}-{arrival_id}", cache_key=cache_key)
         
         if not self.api_client:
+            log_event('efs.api.error', error='no_api_client', cache_key=cache_key)
             return {
                 'success': False,
                 'error': 'No API key available and no cached data found',
@@ -187,6 +199,7 @@ class EnhancedFlightSearchClient:
                 api_result = self.api_client.search_one_way(**search_params)
 
             if not api_result.get('success'):
+                log_event('efs.api.error', cache_key=cache_key, search_id=api_result.get('search_id'), error=api_result.get('error'))
                 return {
                     'success': False,
                     'error': api_result.get('error', 'API call failed'),
@@ -209,17 +222,23 @@ class EnhancedFlightSearchClient:
                         api_endpoint='google_flights',
                         search_term=f"{search_params.get('departure_id','')}-{search_params.get('arrival_id','')}"
                     )
+                    log_event('efs.store.raw.success', search_id=search_id, api_query_id=api_query_id)
             except Exception as raw_err:
                 self.logger.error(f"Failed to store raw API response: {raw_err}")
+                log_exception('efs.store.raw.error', search_id=search_id, exc=raw_err)
 
             # Structured storage (non-fatal)
             try:
                 if search_id and api_data:
                     self._store_structured_data(search_id, search_params, api_data, api_query_id)
                     self.logger.info(f"API call successful - stored complete flight data for search: {search_id}")
+                    log_event('efs.store.structured.success', search_id=search_id)
             except Exception as struct_err:
                 self.logger.error(f"Structured storage failure: {struct_err}")
+                log_exception('efs.store.structured.error', search_id=search_id, exc=struct_err)
 
+            duration_ms = int((perf_counter() - op_start) * 1000)
+            log_event('efs.search.success', search_id=search_id, source='api', duration_ms=duration_ms)
             return {
                 'success': True,
                 'source': 'api',
@@ -229,17 +248,18 @@ class EnhancedFlightSearchClient:
             }
         except Exception as e:
             self.logger.error(f"API call failed: {str(e)}")
+            log_exception('efs.search.error', exc=e, cache_key=cache_key)
             return {
                 'success': False,
                 'error': f'API call failed: {str(e)}',
                 'source': 'api_exception'
             }
     
-    def search_week_range(self, 
-                         departure_id: str,
-                         arrival_id: str, 
-                         start_date: str,
-                         **kwargs) -> Dict[str, Any]:
+    def search_week_range(self,
+                          departure_id: str,
+                          arrival_id: str,
+                          start_date: str,
+                          **kwargs) -> Dict[str, Any]:
         """
         Search flights for 7 consecutive days starting from start_date
         Returns aggregated results with date-wise breakdown and price trends
@@ -261,9 +281,10 @@ class EnhancedFlightSearchClient:
             - summary: Week search statistics
         """
         from datetime import datetime, timedelta
-        
+
         self.logger.info(f"Starting week range search: {departure_id} → {arrival_id} from {start_date}")
-        
+        log_event('efs.week.start', route=f"{departure_id}-{arrival_id}", start_date=start_date)
+
         try:
             # Parse start date
             start_dt = datetime.strptime(start_date, '%Y-%m-%d')
@@ -273,27 +294,28 @@ class EnhancedFlightSearchClient:
                 'error': f'Invalid start_date format: {start_date}. Use YYYY-MM-DD',
                 'source': 'week_range_validation'
             }
-        
+
         # Calculate end date
         end_dt = start_dt + timedelta(days=6)
         end_date = end_dt.strftime('%Y-%m-%d')
-        
+
         # Initialize results containers
-        daily_results = {}
-        all_flights = []
+        daily_results: Dict[str, Any] = {}
+        all_flights: List[Dict[str, Any]] = []
         successful_searches = 0
         total_flights_found = 0
-        
+
         # Search each day in the 7-day range
         for day_offset in range(7):
             search_date = (start_dt + timedelta(days=day_offset)).strftime('%Y-%m-%d')
             day_name = (start_dt + timedelta(days=day_offset)).strftime('%A')
-            
+
             self.logger.info(f"Searching day {day_offset + 1}/7: {search_date} ({day_name})")
-            
+            log_event('efs.week.day.start', date=search_date, day_offset=day_offset)
+
             # Use existing search_flights method for each date
             daily_result = self.search_flights(departure_id, arrival_id, search_date, **kwargs)
-            
+
             if daily_result.get('success'):
                 successful_searches += 1
                 daily_results[search_date] = {
@@ -301,12 +323,12 @@ class EnhancedFlightSearchClient:
                     'day_name': day_name,
                     'day_offset': day_offset
                 }
-                
+
                 # Extract flights from daily result
                 data = daily_result.get('data', {})
                 best_flights = data.get('best_flights', [])
                 other_flights = data.get('other_flights', [])
-                
+
                 # Tag flights with search date info and add to aggregated list
                 for flight in best_flights + other_flights:
                     flight_copy = flight.copy()
@@ -315,10 +337,11 @@ class EnhancedFlightSearchClient:
                     flight_copy['day_offset'] = day_offset
                     flight_copy['is_best'] = flight in best_flights
                     all_flights.append(flight_copy)
-                
+
                 daily_count = len(best_flights) + len(other_flights)
                 total_flights_found += daily_count
                 self.logger.info(f"  Found {daily_count} flights for {search_date}")
+                log_event('efs.week.day.success', date=search_date, flights=daily_count)
             else:
                 daily_results[search_date] = {
                     'result': daily_result,
@@ -327,20 +350,21 @@ class EnhancedFlightSearchClient:
                     'error': daily_result.get('error', 'Search failed')
                 }
                 self.logger.warning(f"  Search failed for {search_date}: {daily_result.get('error')}")
-        
+                log_event('efs.week.day.error', date=search_date, error=daily_result.get('error'))
+
         # Sort all flights by price across all dates
-        def extract_price(flight):
+        def extract_price(flight: Dict[str, Any]):
             price_str = flight.get('price', '9999 USD')
             try:
                 return float(price_str.replace(' USD', '').replace(',', ''))
-            except:
+            except Exception:
                 return 9999.0
-        
+
         all_flights.sort(key=extract_price)
-        
+
         # Analyze price trends
         price_trend = self._analyze_week_price_trend(daily_results)
-        
+
         # Create summary statistics
         summary = {
             'total_days_searched': 7,
@@ -352,14 +376,14 @@ class EnhancedFlightSearchClient:
             'cheapest_day': None,
             'most_expensive_day': None
         }
-        
+
         # Find cheapest and most expensive days
         if price_trend['daily_min_prices']:
             min_price_day = min(price_trend['daily_min_prices'].items(), key=lambda x: x[1])
             max_price_day = max(price_trend['daily_min_prices'].items(), key=lambda x: x[1])
             summary['cheapest_day'] = {'date': min_price_day[0], 'price': min_price_day[1]}
             summary['most_expensive_day'] = {'date': max_price_day[0], 'price': max_price_day[1]}
-        
+
         result = {
             'success': successful_searches > 0,
             'source': 'week_range',
@@ -370,15 +394,20 @@ class EnhancedFlightSearchClient:
             'price_trend': price_trend,
             'summary': summary
         }
-        
+
         if successful_searches == 0:
             result['error'] = 'No successful searches in the 7-day range'
         elif successful_searches < 7:
             result['warning'] = f'Only {successful_searches}/7 days returned results'
-        
         self.logger.info(f"Week range search completed: {successful_searches}/7 days successful, {total_flights_found} total flights")
-        
+        log_event('efs.week.complete', successful_days=successful_searches, total_flights=total_flights_found)
+
         return result
+
+    # ---------------- Internal validation bridge -----------------
+    def _validate_search_params(self, params: Dict[str, Any]):
+        """Wrapper to reuse common validation (kept separate for easy patching/testing)."""
+        return FlightSearchValidator.validate_search_params(params)
     
     def _analyze_week_price_trend(self, daily_results: Dict) -> Dict[str, Any]:
         """Analyze price trends across the week"""
@@ -461,7 +490,11 @@ class EnhancedFlightSearchClient:
         }
     
     def get_cache_stats(self) -> Dict[str, Any]:
-        """Get statistics about cached flight data"""
+        """Get statistics about cached flight data.
+
+        Adds raw api_queries count and delta since last stats invocation to help
+        operators understand ingestion velocity without separate queries.
+        """
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -470,7 +503,7 @@ class EnhancedFlightSearchClient:
                 cursor.execute("SELECT COUNT(*) FROM flight_searches")
                 total_searches = cursor.fetchone()[0]
                 
-                # Searches in last 24 hours
+                # Searches in last 24 hours (using api_queries.created_at authoritative)
                 yesterday = datetime.now() - timedelta(hours=24)
                 # Use created_at (authoritative) instead of query_timestamp for recent activity measure
                 cursor.execute("""
@@ -478,6 +511,16 @@ class EnhancedFlightSearchClient:
                 WHERE created_at > ?
                 """, (yesterday.isoformat(),))
                 recent_searches = cursor.fetchone()[0]
+
+                # Raw api_queries total + delta tracking
+                cursor.execute("SELECT COUNT(*) FROM api_queries")
+                raw_total = cursor.fetchone()[0]
+                delta = None
+                if not hasattr(self, '_last_raw_total'):
+                    self._last_raw_total = raw_total  # type: ignore[attr-defined]
+                else:
+                    delta = raw_total - getattr(self, '_last_raw_total')  # type: ignore[attr-defined]
+                    self._last_raw_total = raw_total  # type: ignore[attr-defined]
                 
                 # Popular routes (defensive: only if columns exist)
                 popular_routes = []
@@ -500,11 +543,14 @@ class EnhancedFlightSearchClient:
                 return {
                     'total_cached_searches': total_searches,
                     'recent_searches_24h': recent_searches,
+                    'raw_api_queries_total': raw_total,
+                    'raw_api_queries_delta': delta,
+                    'metrics': METRICS.snapshot(),
                     'popular_routes': [
                         {
-                            'route': f"{route[0]}-{route[1]}", 
+                            'route': f"{route[0]}-{route[1]}",
                             'search_count': route[2]
-                        } 
+                        }
                         for route in popular_routes
                     ]
                 }
@@ -652,6 +698,50 @@ class EnhancedFlightSearchClient:
             )
         )
 
+def parse_cli_date(raw: str) -> str:
+    """Parse CLI date inputs supporting DD-MM[-YYYY] preferred & legacy MM-DD forms.
+
+    Rules:
+    1. If first component >12 -> interpret as DD-MM.
+    2. If second component >12 and first <=12 -> interpret as MM-DD (legacy month-first).
+    3. If both <=12 (ambiguous) -> interpret as DD-MM (day-first policy).
+    4. Year omitted -> current year, roll forward one year if resulting date already past and input had no year.
+    5. On malformed input fall back to legacy parse_date for validation consistency.
+    """
+    from date_utils import parse_date as _legacy_parse, DateParseError as _DPE  # local import to avoid circulars
+    raw = raw.strip()
+    parts = raw.split('-')
+    if len(parts) not in (2,3):
+        return _legacy_parse(raw)
+    try:
+        a = int(parts[0]); b = int(parts[1])
+        year = int(parts[2]) if len(parts) == 3 else None
+    except ValueError:
+        return _legacy_parse(raw)
+    if a > 12:
+        use_day_first = True
+    elif b > 12:
+        use_day_first = False
+    else:
+        use_day_first = True  # ambiguous
+    day, month = (a, b) if use_day_first else (b, a)
+    from datetime import date as _date
+    today = _date.today()
+    if year is None:
+        year = today.year
+    try:
+        d = _date(year, month, day)
+    except ValueError:
+        return _legacy_parse(raw)
+    if len(parts) == 2 and d < today:
+        # rollover year for short form in the past
+        try:
+            d = _date(year + 1, month, day)
+        except ValueError:
+            return _legacy_parse(raw)
+    return d.strftime('%Y-%m-%d')
+
+
 def _cli():  # minimal terminal interface
     import argparse, json as _json, sys as _sys
     from date_utils import parse_date, DateParseError, validate_and_order
@@ -719,63 +809,9 @@ Exit Codes:
     p.add_argument('--stats', action='store_true', help='Print cache stats after search')
     args = p.parse_args()
 
-    def _parse_cli_date(raw: str) -> str:
-        """Parse input date allowing DD-MM[-YYYY] (preferred) and legacy MM-DD forms.
-
-        Logic:
-        1. Split components.
-        2. If first part > 12 -> interpret as DD-MM.
-        3. If first part <=12 and second part >12 -> interpret as MM-DD (legacy) and delegate.
-        4. If both <=12 (ambiguous) -> treat as DD-MM per new policy.
-        5. Attempt construction; on failure fall back to existing parse_date for safety.
-        """
-        raw = raw.strip()
-        parts = raw.split('-')
-        if len(parts) not in (2,3):
-            # fall back to legacy parser which will raise its own error
-            return parse_date(raw)
-        try:
-            a = int(parts[0]); b = int(parts[1])
-            year = None
-            if len(parts) == 3:
-                year = int(parts[2])
-        except ValueError:
-            return parse_date(raw)
-        # Determine interpretation
-        use_day_first = False
-        if a > 12:
-            use_day_first = True
-        elif b > 12:
-            use_day_first = False  # month first (legacy)
-        else:
-            # ambiguous -> day-first per new requirement
-            use_day_first = True
-        if use_day_first:
-            day = a; month = b
-        else:
-            month = a; day = b
-        from datetime import date as _date
-        from datetime import datetime as _dt
-        today = _date.today()
-        if year is None:
-            year = today.year
-        try:
-            d = _date(year, month, day)
-        except ValueError:
-            # fallback to legacy
-            return parse_date(raw)
-        # If short form and interpreted date already passed, roll a year forward (matches legacy behavior)
-        if len(parts) == 2 and d < today:
-            try:
-                d = _date(year + 1, month, day)
-            except ValueError:
-                # fallback again
-                return parse_date(raw)
-        return d.strftime('%Y-%m-%d')
-
     try:
-        outbound_fmt = _parse_cli_date(args.outbound_date)
-        ret_fmt = _parse_cli_date(args.return_date) if (args.return_date and not args.week) else None
+        outbound_fmt = parse_cli_date(args.outbound_date)
+        ret_fmt = parse_cli_date(args.return_date) if (args.return_date and not args.week) else None
         if ret_fmt:
             validate_and_order(outbound_fmt, ret_fmt)
     except DateParseError as e:

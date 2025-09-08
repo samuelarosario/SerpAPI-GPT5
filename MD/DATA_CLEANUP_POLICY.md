@@ -119,7 +119,7 @@ Flight Data (24-hour rolling structured cache):
 └── Cache: Hash keys and responses ⏰ 24h
 
 Raw API Responses (api_queries):
-└── Preserved indefinitely (unless explicit retention set)
+└── Preserved indefinitely (unless explicit retention set). Legacy `query_timestamp` column has been fully removed; `created_at` is authoritative.
 ```
 
 ## 💡 **Why This Design is Optimal**

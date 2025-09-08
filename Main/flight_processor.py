@@ -1,7 +1,17 @@
+"""DEPRECATED MODULE (Sept 2025)
+
+Flight Data Processor (legacy path). This module is superseded by the
+structured ingestion built into `EnhancedFlightSearchClient._store_structured_data`.
+
+Status:
+    - Retained temporarily for historical reference.
+    - New development MUST NOT use this module.
+    - Will be removed after deprecation sunset.
+
+Raw data + structured persistence pipeline lives in enhanced_flight_search.py.
 """
-Flight Data Processor
-Processes SerpAPI responses and stores structured data in database
-"""
+from warnings import warn as _warn
+_warn(DeprecationWarning("flight_processor module is deprecated; use EnhancedFlightSearchClient instead."), stacklevel=2)
 
 import sqlite3
 import json

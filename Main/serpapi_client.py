@@ -11,6 +11,11 @@ from datetime import datetime
 from typing import Dict, Optional, Any
 from urllib.parse import urlencode
 import hashlib
+import random
+from time import perf_counter
+
+from core.metrics import METRICS  # type: ignore
+from core.structured_logging import log_event, log_exception  # type: ignore
 
 from config import (
     SERPAPI_CONFIG, DEFAULT_SEARCH_PARAMS, RATE_LIMIT_CONFIG, 
@@ -85,9 +90,16 @@ class SerpAPIFlightClient:
         )
         if not is_valid:
             raise ValueError(f"Invalid search parameters: {'; '.join(errors)}")
-        
-        # Generate search ID
+
+        # Generate search ID (kept inside method scope)
         search_id = self.generate_search_id(params)
+        log_event(
+            'search.start',
+            search_id=search_id,
+            params_hash=hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest(),
+            adults=params.get('adults'),
+            route=f"{params.get('departure_id')}-{params.get('arrival_id')}"
+        )
         
         # Check rate limits
         if self.rate_limiter and not self.rate_limiter.can_make_request():
@@ -95,7 +107,7 @@ class SerpAPIFlightClient:
 
         try:
             # Make API request
-            response_data = self._make_request(params)
+            response_data = self._make_request(params, search_id=search_id)
             
             # Record request if rate limiting is enabled
             if self.rate_limiter:
@@ -111,10 +123,12 @@ class SerpAPIFlightClient:
                 'status': 'success',
                 'error': None
             }
+            log_event('search.success', search_id=search_id, flights_best=len(response_data.get('best_flights',[])) if isinstance(response_data, dict) else None)
             
         except Exception as e:
             # Handle API errors
             self.logger.error(f"Flight search failed: {str(e)}")
+            log_exception('search.error', search_id=search_id, exc=e)
             result = {
                 'success': False,
                 'search_id': search_id,
@@ -127,16 +141,23 @@ class SerpAPIFlightClient:
         
         return result
     
-    def _make_request(self, params: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Make HTTP request to SerpAPI with retries"""
+    def _make_request(self, params: Dict[str, Any], *, search_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Make HTTP request to SerpAPI with retries and jittered exponential backoff.
+
+        Jitter rationale: Avoids synchronized retry storms when multiple processes
+        encounter upstream rate limiting or transient failures simultaneously.
+        """
         
         url = f"{self.base_url}?{urlencode(params)}"
         
+        start_overall = perf_counter()
         for attempt in range(self.max_retries + 1):
             try:
                 # Mask API key in logs
                 safe_url = url.replace(self.api_key, '***') if self.api_key else url
-                self.logger.info(f"Making API request (attempt {attempt + 1}) -> {safe_url}")
+                prefix = f"[{search_id}] " if search_id else ""
+                self.logger.info(f"{prefix}API request attempt {attempt + 1} -> {safe_url}")
+                log_event('api.attempt', search_id=search_id, attempt=attempt+1)
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 
@@ -147,19 +168,34 @@ class SerpAPIFlightClient:
                     raise Exception(f"API Error: {data['error']}")
                 
                 self.logger.info("API request successful")
+                log_event('api.success', search_id=search_id, attempt=attempt+1, status_code=response.status_code)
+                METRICS.inc('api_calls')
+                total_ms = int((perf_counter() - start_overall) * 1000)
+                METRICS.inc('api_time_ms_total', total_ms)
                 return data
                 
             except requests.exceptions.RequestException as e:
-                self.logger.warning(f"Request attempt {attempt + 1} failed: {e}")
+                prefix = f"[{search_id}] " if search_id else ""
+                self.logger.warning(f"{prefix}Request attempt {attempt + 1} failed: {e}")
+                if attempt > 0:
+                    METRICS.inc('retry_attempts')
+                log_event('api.retry', search_id=search_id, attempt=attempt+1, error=str(e))
                 
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay * (2 ** attempt))  # Exponential backoff
+                    base_delay = self.retry_delay * (2 ** attempt)
+                    jitter = random.uniform(0, 0.4)
+                    time.sleep(base_delay + jitter)  # Exponential backoff + constant jitter component
                 else:
-                    self.logger.error(f"All {self.max_retries + 1} attempts failed")
+                    self.logger.error(f"{prefix}All {self.max_retries + 1} attempts failed")
+                    METRICS.inc('api_failures')
+                    log_exception('api.failed', search_id=search_id, exc=e, attempts=self.max_retries+1)
                     raise Exception(f"API request failed after {self.max_retries + 1} attempts: {e}")
             
             except Exception as e:
-                self.logger.error(f"Unexpected error: {e}")
+                prefix = f"[{search_id}] " if search_id else ""
+                self.logger.error(f"{prefix}Unexpected error: {e}")
+                METRICS.inc('api_failures')
+                log_exception('api.exception', search_id=search_id, exc=e)
                 raise
         
         # This should never be reached due to the exception handling above

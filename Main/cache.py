@@ -1,6 +1,7 @@
 """Cache management for flight searches (extracted from enhanced_flight_search)."""
 from __future__ import annotations
 import json, sqlite3, hashlib, logging, os
+from core.metrics import METRICS  # type: ignore
 from core.db_utils import open_connection
 from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
@@ -16,6 +17,12 @@ class FlightSearchCache:
         else:
             self.db_path = db_path
         self.logger = logging.getLogger(__name__)
+        # Ensure supporting index for cache lookups exists (idempotent)
+        try:
+            with open_connection(self.db_path) as conn:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_flight_searches_cache_key ON flight_searches(cache_key)")
+        except Exception as e:  # pragma: no cover
+            self.logger.warning(f"Could not ensure cache_key index: {e}")
 
     # ------------------- key generation -------------------
     def generate_cache_key(self, search_params: Dict[str, Any]) -> str:
@@ -47,9 +54,12 @@ class FlightSearchCache:
                 )
                 row = cur.fetchone()
                 if not row:
-                    self.logger.info(f"Cache MISS for search key: {cache_key[:12]}...")
+                    self.logger.info(f"[cache:{cache_key[:12]}] Cache MISS")
+                    METRICS.inc('cache_misses')
                     return None
-                self.logger.info(f"Cache HIT for search key: {cache_key[:12]}...")
+                hit_search_id = row['search_id'] if 'search_id' in row.keys() else 'unknown'
+                self.logger.info(f"[{hit_search_id}] Cache HIT key={cache_key[:12]}")
+                METRICS.inc('cache_hits')
                 # Fetch flight results
                 cur.execute(
                     """
