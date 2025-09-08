@@ -1,5 +1,10 @@
 # SerpAPI Flight Data System
 
+![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg) ![Status](https://img.shields.io/badge/status-stable-success.svg) ![Tests](https://img.shields.io/badge/tests-37_passing-brightgreen.svg)
+
+Release v0.3.0: import path stabilization, metrics singleton guard, schema checksum + CLI JSON/force enhancements.
+See CHANGELOG for details.
+
 A comprehensive flight data collection, storage, and analysis system using SerpAPI Google Flights API.
 
 ## 🎯 System Overview
