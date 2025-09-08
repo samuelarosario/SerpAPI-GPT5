@@ -34,7 +34,11 @@ async def dashboard(request: Request):
             document.getElementById('info').textContent = 'User ID '+user.id;
         } catch(e){ localStorage.removeItem('access_token'); window.location='/'; }
     }
-    document.getElementById('logout').addEventListener('click', ()=>{ localStorage.clear(); window.location='/'; });
+    document.getElementById('logout').addEventListener('click', async ()=>{ 
+        const t = localStorage.getItem('access_token');
+        try { if(t){ await fetch('/auth/logout',{method:'POST', headers:{'Authorization':'Bearer '+t}}); } } catch(e){}
+        localStorage.clear(); window.location='/'; 
+    });
     init();
     </script>
     </body></html>""")

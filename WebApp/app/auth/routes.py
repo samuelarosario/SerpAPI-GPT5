@@ -163,3 +163,23 @@ def toggle_active(user_id: int, request: Request, db: Session = Depends(get_db))
     db.commit()
     log_auth("admin_toggle_active", email=user.email, success=True, detail=str(user.is_active))
     return {"status": "ok", "is_active": user.is_active}
+
+
+@router.post("/logout")
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Stateless logout: client should discard tokens. We log the attempt for audit."""
+    auth = request.headers.get("Authorization")
+    email = None
+    if auth and auth.lower().startswith("bearer "):
+        token = auth.split(None,1)[1]
+        try:
+            payload = jwt.decode(token, settings.webapp_jwt_secret, algorithms=[settings.algorithm])
+            sub = payload.get("sub")
+            if sub and sub.isdigit():
+                u = db.query(models.User).filter(models.User.id == int(sub)).first()
+                if u:
+                    email = u.email
+        except JWTError:
+            pass
+    log_auth("logout", email=email, success=True)
+    return {"status": "logged_out"}
