@@ -48,7 +48,8 @@ class EnhancedFlightSearchClient:
 
         # Ensure supporting unique constraint for price_insights (logical 1:1)
         try:
-            with sqlite3.connect(self.db_path) as _c:
+            from Main.core.db_utils import open_connection as _open_conn
+            with _open_conn(self.db_path) as _c:
                 _c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_price_insights_search_unique ON price_insights(search_id)")
         except Exception:
             pass
@@ -502,9 +503,9 @@ class EnhancedFlightSearchClient:
         operators understand ingestion velocity without separate queries.
         """
         try:
-            with sqlite3.connect(self.db_path) as conn:
+            from Main.core.db_utils import open_connection as _open_conn
+            with _open_conn(self.db_path) as conn:
                 cursor = conn.cursor()
-                
                 # Total cached searches
                 cursor.execute("SELECT COUNT(*) FROM flight_searches")
                 total_searches = cursor.fetchone()[0]
@@ -570,8 +571,14 @@ class EnhancedFlightSearchClient:
         """Persist normalized flight data (idempotent for a given search_id)."""
         try:
             cache_key = self.cache.generate_cache_key(search_params)
-            with sqlite3.connect(self.db_path) as conn:
+            from Main.core.db_utils import open_connection as _open_conn
+            with _open_conn(self.db_path) as conn:
                 cur = conn.cursor()
+                # Idempotent cleanup
+                cur.execute("DELETE FROM layovers WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = ?)", (search_id,))
+                cur.execute("DELETE FROM flight_segments WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = ?)", (search_id,))
+                cur.execute("DELETE FROM flight_results WHERE search_id = ?", (search_id,))
+                cur.execute("DELETE FROM price_insights WHERE search_id = ?", (search_id,))
                 cur.execute(
                     """
                     INSERT OR REPLACE INTO flight_searches (
@@ -606,10 +613,86 @@ class EnhancedFlightSearchClient:
                         datetime.now().isoformat()
                     )
                 )
-                # Flights
+                # Batch collect flights
+                flight_rows: list[tuple] = []
+                now_iso = datetime.now().isoformat()
                 for group, label in ((api_response.get('best_flights', []), 'best'), (api_response.get('other_flights', []), 'other')):
                     for rank, flight in enumerate(group, 1):
-                        self._insert_flight_result(cur, search_id, flight, label, rank)
+                        legacy = 'best_flight' if label == 'best' else 'other_flight'
+                        flight_rows.append((
+                            search_id, legacy, rank,
+                            flight.get('total_duration'),
+                            flight.get('price'),
+                            'USD',
+                            flight.get('type', 'One way'),
+                            len(flight.get('layovers', [])),
+                            flight.get('carbon_emissions', {}).get('this_flight'),
+                            flight.get('carbon_emissions', {}).get('typical_for_this_route'),
+                            flight.get('carbon_emissions', {}).get('difference_percent'),
+                            flight.get('departure_token'),
+                            flight.get('booking_token'),
+                            flight.get('airline_logo'),
+                            now_iso
+                        ))
+                if flight_rows:
+                    cur.executemany(
+                        """
+                        INSERT INTO flight_results (
+                            search_id, result_type, result_rank, total_duration, total_price,
+                            price_currency, flight_type, layover_count, carbon_emissions_flight,
+                            carbon_emissions_typical, carbon_emissions_difference_percent,
+                            departure_token, booking_token, airline_logo_url, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, flight_rows
+                    )
+                    # Map ids
+                    cur.execute("SELECT id, result_type, result_rank FROM flight_results WHERE search_id = ?", (search_id,))
+                    id_map = {(r[1], r[2]): r[0] for r in cur.fetchall()}
+                    segment_rows: list[tuple] = []
+                    layover_rows: list[tuple] = []
+                    for group, label in ((api_response.get('best_flights', []), 'best'), (api_response.get('other_flights', []), 'other')):
+                        for rank, flight in enumerate(group, 1):
+                            fid = id_map.get(('best_flight' if label=='best' else 'other_flight', rank))
+                            if not fid:
+                                continue
+                            for order, seg in enumerate(flight.get('flights', []), 1):
+                                dep = seg.get('departure_airport', {})
+                                arr = seg.get('arrival_airport', {})
+                                segment_rows.append((
+                                    fid, order,
+                                    dep.get('id'), dep.get('time'),
+                                    arr.get('id'), arr.get('time'),
+                                    seg.get('duration'), seg.get('airplane'),
+                                    seg.get('airline'), seg.get('flight_number'),
+                                    seg.get('travel_class'), seg.get('legroom'),
+                                    seg.get('often_delayed_by_over_30_min', False),
+                                    json.dumps(seg.get('extensions', [])),
+                                    now_iso
+                                ))
+                            for order, lay in enumerate(flight.get('layovers', []), 1):
+                                layover_rows.append((
+                                    fid, order,
+                                    lay.get('id'), lay.get('duration'), lay.get('overnight', False), now_iso
+                                ))
+                    if segment_rows:
+                        cur.executemany(
+                            """
+                            INSERT INTO flight_segments (
+                                flight_result_id, segment_order, departure_airport_code, departure_time,
+                                arrival_airport_code, arrival_time, duration_minutes, airplane_model,
+                                airline_code, flight_number, travel_class, legroom,
+                                often_delayed, extensions, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """, segment_rows
+                        )
+                    if layover_rows:
+                        cur.executemany(
+                            """
+                            INSERT INTO layovers (
+                                flight_result_id, layover_order, airport_code, duration_minutes, is_overnight, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                            """, layover_rows
+                        )
                 if 'price_insights' in api_response:
                     self._insert_price_insights(cur, search_id, api_response['price_insights'])
                 conn.commit()

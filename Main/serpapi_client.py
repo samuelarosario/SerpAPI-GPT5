@@ -155,6 +155,7 @@ class SerpAPIFlightClient:
                 prefix = f"[{search_id}] " if search_id else ""
                 self.logger.info(f"{prefix}API request attempt {attempt + 1} -> {safe_url}")
                 log_event('api.attempt', search_id=search_id, attempt=attempt+1)
+                attempt_start = perf_counter()
                 response = self.session.get(url, timeout=self.timeout)
                 response.raise_for_status()
                 
@@ -169,6 +170,16 @@ class SerpAPIFlightClient:
                 METRICS.inc('api_calls')
                 total_ms = int((perf_counter() - start_overall) * 1000)
                 METRICS.inc('api_time_ms_total', total_ms)
+                # latency bucket (single-attempt duration)
+                attempt_ms = int((perf_counter() - attempt_start) * 1000)
+                if attempt_ms < 250:
+                    METRICS.inc('api_latency_lt_250_ms')
+                elif attempt_ms < 500:
+                    METRICS.inc('api_latency_lt_500_ms')
+                elif attempt_ms < 1000:
+                    METRICS.inc('api_latency_lt_1000_ms')
+                else:
+                    METRICS.inc('api_latency_ge_1000_ms')
                 return data
                 
             except requests.exceptions.RequestException as e:
@@ -265,3 +276,5 @@ def test_client():
 
 if __name__ == "__main__":
     test_client()
+
+__all__ = ["SerpAPIFlightClient"]

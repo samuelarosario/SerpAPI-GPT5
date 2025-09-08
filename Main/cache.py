@@ -38,7 +38,10 @@ class FlightSearchCache:
 
     # ------------------- key generation -------------------
     def generate_cache_key(self, search_params: dict[str, Any]) -> str:
-        normalized = {}
+        # NOTE: Key stability contract: only normalized, non-null, lower-cased strings + raw values.
+        # If new functional search parameters are added upstream they MUST be included here
+        # (or intentionally omitted) to avoid silent cache collisions or under-segmentation.
+        normalized: dict[str, Any] = {}
         for k, v in search_params.items():
             if v is not None:
                 normalized[k] = v.lower() if isinstance(v, str) else v

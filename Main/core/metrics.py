@@ -19,6 +19,14 @@ class _Metrics:
             'cache_misses': 0,
             'retry_attempts': 0,
             'structured_storage_failures': 0,
+            # function timing (decorator future use)
+            'function_calls': 0,
+            'function_time_ms_total': 0,
+            # api latency coarse buckets (single-attempt duration)
+            'api_latency_lt_250_ms': 0,
+            'api_latency_lt_500_ms': 0,
+            'api_latency_lt_1000_ms': 0,
+            'api_latency_ge_1000_ms': 0,
         }
     def inc(self, name: str, value: int = 1):
         with _lock:
