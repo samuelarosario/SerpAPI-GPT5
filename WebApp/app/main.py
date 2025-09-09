@@ -112,6 +112,16 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             .detailsHint{color:#5f6368;font-size:.8rem;margin-top:.2rem}
             .rowActions{margin-top:.3rem}
             .toggleLink{border:1px solid #dadce0;background:#fff;border-radius:4px;padding:.2rem .45rem;cursor:pointer;font-size:.8rem;color:#1a73e8}
+            .itinerary{display:flex;flex-direction:column;gap:.6rem;margin:.6rem 0}
+            .leg{display:flex;gap:10px}
+            .leg .dot{width:10px}
+            .dot::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;background:#5f6368;position:relative;top:6px}
+            .leg-main{flex:1}
+            .leg-times{font-weight:600;color:#202124}
+            .leg-route{color:#5f6368;font-size:.9rem}
+            .leg-meta{color:#5f6368;font-size:.85rem;margin-top:.2rem}
+            .layover{padding:.45rem .6rem;background:#f8f9fa;border:1px dashed #e0e3e7;border-radius:6px;color:#5f6368;font-size:.85rem}
+            .layover.warn{border-color:#f59e0b;background:#fff7ed}
                 .pagination{display:flex;justify-content:center;gap:10px;margin:18px 0}
                 .pagination button{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.4rem .7rem;cursor:pointer}
                 .back{color:#5f6368;text-decoration:none;font-size:.85rem;margin-left:8px}
@@ -175,7 +185,11 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 dateInput.value=today();
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
-                function fmtDuration(mins){ if(!mins||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
+                function fmtDuration(mins){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
+                function toDate(ts){ try{ return ts? new Date(ts) : null; }catch{ return null; } }
+                function fmtTime(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+                function dayDiff(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return 0; const ad=new Date(da.getFullYear(),da.getMonth(),da.getDate()); const bd=new Date(db.getFullYear(),db.getMonth(),db.getDate()); return Math.round((bd-ad)/86400000); }
+                function minutesBetween(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/60000)); }
                 function timePart(ts){ if(!ts) return ''; const t=(ts.split('T')[1]||ts).substring(0,5); return t; }
                 function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=segs[0].departure_airport?.id||'?'; const b=segs[segs.length-1].arrival_airport?.id||'?'; return `${a} → ${b}`; }
                 function buildStops(f){ const n=(f.flights||[]).length-1; return Math.max(0,n); }
@@ -216,11 +230,35 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     prevBtn.disabled = page<=1; nextBtn.disabled = page>=totalPages; pageInfo.textContent = `Page ${page} of ${totalPages}`;
                                 resEl.innerHTML = slice.map((x,idx)=>{
                                     const chips = [x.airlines && `<span class='chip'>${x.airlines}</span>`, x.stops===0 && `<span class='chip'>Nonstop</span>`].filter(Boolean).join('');
-                                    const segsFull=(x.raw.flights||[]).map(s=>{
-                                        const al=s.airline||''; const fn=s.flight_number||''; const dep=s.departure_airport?.id||''; const arr=s.arrival_airport?.id||''; const dt=timePart(s.departure_time||''); const at=timePart(s.arrival_time||'');
-                                        const dur=(s.duration?`${s.duration}m`:"");
-                                        return `<div class='seg'>${dep} ${dt} → ${arr} ${at}${dur?` • ${dur}`:''}${al||fn?` — ${al}${fn?' '+fn:''}`:''}</div>`;
-                                    }).join('');
+                                                const legs = (x.raw.flights||[]);
+                                                const parts = [];
+                                                for(let i=0;i<legs.length;i++){
+                                                    const s=legs[i];
+                                                    const depA=s.departure_airport?.id||''; const arrA=s.arrival_airport?.id||'';
+                                                    const dt=fmtTime(s.departure_time||''); const at=fmtTime(s.arrival_time||'');
+                                                    const dd=dayDiff(s.departure_time, s.arrival_time); const plus = dd>0? ` +${dd}`:'';
+                                                    const durMin = (s.duration? Number(s.duration): null);
+                                                    const durStr = durMin? fmtDuration(durMin) : '';
+                                                    const al=s.airline||''; const fn=s.flight_number||'';
+                                                    parts.push(`
+                                                        <div class='leg'>
+                                                            <div class='dot'></div>
+                                                            <div class='leg-main'>
+                                                                <div class='leg-times'>${dt} – ${at}${plus}</div>
+                                                                <div class='leg-route'>${depA} → ${arrA}</div>
+                                                                <div class='leg-meta'>${[al && al, fn && ('• '+fn), durStr && ('• '+durStr)].filter(Boolean).join(' ')}</div>
+                                                            </div>
+                                                        </div>
+                                                    `);
+                                                    if(i<legs.length-1){
+                                                        const next=legs[i+1];
+                                                        const mins = minutesBetween(s.arrival_time, next.departure_time);
+                                                        const overnight = dayDiff(s.arrival_time, next.departure_time) > 0;
+                                                        const lay = `${fmtDuration(mins||0)} layover • ${next.departure_airport?.id||''}`;
+                                                        parts.push(`<div class='layover ${overnight?'warn':''}'>${lay}${overnight?' • Overnight layover ⚠️':''}</div>`);
+                                                    }
+                                                }
+                                                const segsFull = `<div class='itinerary'>${parts.join('')}</div>`;
                                     return `
                                         <details class='result' data-relidx='${start+idx}'>
                                             <summary>
