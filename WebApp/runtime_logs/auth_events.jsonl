@@ -67,3 +67,6 @@
 {"ts": "2025-09-09T05:20:30.051458+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
 {"ts": "2025-09-09T05:42:06.934350+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
 {"ts": "2025-09-09T05:42:07.144930+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-09T05:46:53.295446+00:00", "event": "logout", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-09T05:46:58.732857+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
+{"ts": "2025-09-09T05:46:58.952461+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
