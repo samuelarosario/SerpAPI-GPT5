@@ -3,6 +3,8 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
 import pathlib
+from sqlalchemy import text
+from WebApp.app.db.session import engine
 
 from WebApp.app.auth.routes import router as auth_router
 # Lazy import helper for EnhancedFlightSearchClient to avoid modifying existing EFS modules
@@ -133,11 +135,13 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 <div class='topbar'>
                     <div class='logo'>SerpFlights</div>
                     <form id='fsForm' class='search'>
-                        <input id='origin_code' placeholder='Origin (e.g. JFK)' maxlength='5' required />
-                        <input id='destination' placeholder='Destination (e.g. LAX)' maxlength='5' required />
+                        <input id='origin_code' placeholder='Origin: code, city, or name' maxlength='32' list='originList' required />
+                        <input id='destination' placeholder='Destination: code, city, or name' maxlength='32' list='destList' required />
                         <input id='date' type='date' required />
                         <button type='submit'>Search</button>
                     </form>
+                    <datalist id='originList'></datalist>
+                    <datalist id='destList'></datalist>
                     <nav class='nav'>
                         <a class='back' href='/dashboard'>&larr; Dashboard</a>
                     </nav>
@@ -185,6 +189,40 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 dateInput.value=today();
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+                // --- Autosuggest for airports ---
+                async function fetchAirports(q){
+                    if(!q||q.length<2) return [];
+                    try{
+                        const r = await authFetch(`/api/airports/suggest?q=${encodeURIComponent(q)}`);
+                        if(!r.ok) return [];
+                        const data = await r.json();
+                        return Array.isArray(data)? data : [];
+                    }catch{return []}
+                }
+                function populateDatalist(listId, items){
+                    const dl = document.getElementById(listId);
+                    if(!dl) return;
+                    dl.innerHTML = items.slice(0,10).map(it=>{
+                        const label = `${it.code} — ${it.name}${it.city?` (${it.city})`:''}${it.country?`, ${it.country}`:''}`;
+                        const val = it.code;
+                        return `<option value="${val}" label="${label}"></option>`;
+                    }).join('');
+                }
+                function attachSuggest(inputEl, listId){
+                    let last=''; let timer=null;
+                    inputEl.addEventListener('input', ()=>{
+                        const v=inputEl.value.trim();
+                        if(v===last) return; last=v;
+                        clearTimeout(timer);
+                        timer=setTimeout(async()=>{
+                            const items = await fetchAirports(v);
+                            populateDatalist(listId, items);
+                        }, 200);
+                    });
+                }
+                attachSuggest(originInput,'originList');
+                attachSuggest(destinationInput,'destList');
+
                 function fmtDuration(mins){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
                 function toDate(ts){ try{ return ts? new Date(ts) : null; }catch{ return null; } }
                 function fmtTime(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
@@ -355,6 +393,30 @@ async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5,
         return client.search_flights(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
     result = await run_in_threadpool(run_search)
     return JSONResponse(result)
+
+
+@app.get("/api/airports/suggest", response_class=JSONResponse, tags=["airports"])
+async def airports_suggest(q: str = Query(..., min_length=1, max_length=64), limit: int = Query(10, ge=1, le=50)):
+    q = q.strip()
+    if not q:
+        return JSONResponse([])
+    like = f"%{q}%"
+    sql = text(
+        """
+        SELECT airport_code AS code, airport_name AS name, country, country_code, city
+        FROM airports
+        WHERE airport_code LIKE :like COLLATE NOCASE
+           OR airport_name LIKE :like COLLATE NOCASE
+           OR city LIKE :like COLLATE NOCASE
+           OR country LIKE :like COLLATE NOCASE
+        ORDER BY airport_code ASC
+        LIMIT :limit
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, {"like": like, "limit": limit}).mappings().fetchall()
+        out = [dict(r) for r in rows]
+    return JSONResponse(out)
 
 
 @app.get("/admin", response_class=HTMLResponse, tags=["ui"])

@@ -83,11 +83,7 @@ CREATE TABLE airports (
     city TEXT,
     country TEXT,
     country_code TEXT,
-    timezone TEXT,
-    image_url TEXT,
-    thumbnail_url TEXT,
-    first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_seen DATETIME DEFAULT CURRENT_TIMESTAMP
+    timezone TEXT
 );
 
 -- TABLE: api_queries
