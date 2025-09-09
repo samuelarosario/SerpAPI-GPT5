@@ -74,91 +74,188 @@ async def dashboard(request: Request):
 
 @app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
 async def flight_search_ui(request: Request):  # Simple HTML + JS form
-    return HTMLResponse("""<!DOCTYPE html><html><head><title>Flight Search</title><meta charset='utf-8'/><meta http-equiv='Cache-Control' content='no-store' />
-    <style>body{font-family:system-ui;margin:0;background:#eef5fb;min-height:100vh;}header{background:#134e9b;color:#fff;padding:.9rem 1.2rem;}h1{margin:0;font-size:1.15rem;}main{max-width:960px;margin:1.2rem auto;background:#fff;padding:1.2rem 1.5rem;border-radius:10px;box-shadow:0 2px 8px -2px rgba(0,40,90,.15);}form{display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-end;margin-bottom:1rem;}label{font-size:.65rem;text-transform:uppercase;letter-spacing:.5px;font-weight:600;color:#134e9b;display:block;margin-bottom:.25rem;}input{padding:.55rem .6rem;border:1px solid #bcd3ea;border-radius:6px;font-size:.85rem;background:#f5faff;min-width:140px;}button{padding:.6rem 1rem;border:none;background:#2563eb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;font-size:.8rem;}button:hover{background:#134e9b;}#results{margin-top:1rem;} .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:.9rem;margin-top:.75rem;} .card{border:1px solid #d5e3f2;padding:.65rem .7rem;border-radius:8px;background:#f8fbfe;font-size:.7rem;line-height:1.25rem;display:flex;flex-direction:column;gap:.25rem;} .src{font-weight:600;color:#0f2747;font-size:.72rem;margin-bottom:.1rem;} .price{color:#047857;font-weight:600;font-size:.75rem;} .err{color:#b91c1c;font-size:.7rem;margin-top:.5rem;} .meta{font-size:.58rem;color:#475569;margin-top:.15rem;} a.back{color:#fff;text-decoration:none;margin-left:1rem;font-size:.7rem;} .tags{margin-top:.15rem;} .tags span{display:inline-block;background:#134e9b;color:#fff;font-size:.55rem;padding:.15rem .45rem;border-radius:1rem;margin-right:.3rem;margin-top:.25rem;} .itinerary{font-size:.58rem;color:#1e3a5f;line-height:1rem;margin-top:.2rem;} .segments{margin-top:.15rem;border-top:1px dashed #c3d7ea;padding-top:.35rem;display:flex;flex-direction:column;gap:.25rem;} .seg{display:flex;justify-content:space-between;font-size:.55rem;color:#334155;} .seg span{white-space:nowrap;} .pill{background:#134e9b;color:#fff;padding:.1rem .4rem;border-radius:.75rem;font-size:.5rem;font-weight:600;margin-right:.3rem;}</style></head>
-        <body><header><h1>Flight Search <a class='back' href='/dashboard'>&larr; Back</a></h1></header><main>
-        <form id='fsForm'>
-            <div><label for='origin_code'>Origin</label><input id='origin_code' name='origin' placeholder='e.g. JFK' required maxlength='5'/></div>
-            <div><label for='destination'>Destination</label><input id='destination' name='destination' placeholder='e.g. LAX' required maxlength='5'/></div>
-            <div><label for='date'>Date</label><input id='date' name='date' type='date' required/></div>
-            <div><button type='submit'>Search</button></div>
-        </form>
-        <div id='status' class='meta'>Enter origin, destination and date (YYYY-MM-DD).</div>
-        <div id='results'></div>
-        <script>
-        const f=document.getElementById('fsForm');
-        const statusEl=document.getElementById('status');
-        const resEl=document.getElementById('results');
-    const originInput=document.getElementById('origin_code');
-        const destinationInput=document.getElementById('destination');
-        const dateInput=document.getElementById('date');
-        function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; return Promise.reject(new Error('Not authenticated'));} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
-        f.addEventListener('submit',async(e)=>{ 
-            e.preventDefault();
-            resEl.innerHTML='';
-            const o=(originInput.value||'').trim().toUpperCase();
-            const d=(destinationInput.value||'').trim().toUpperCase();
-            const dt=dateInput.value;
-            if(!o||!d||!dt){ statusEl.textContent='All fields required.'; return; }
-            statusEl.textContent='Searching...';
-            try { 
-                const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
-                console.debug('Flight search request', url);
-                const r=await authFetch(url);
-                if(!r.ok){ const txt=await r.text(); statusEl.textContent='Error: '+txt; console.error('Search HTTP error', txt); return; }
-                const data=await r.json();
-                console.debug('Flight search response', data);
-                if(!data.success){ statusEl.textContent='No results: '+(data.error||'unknown'); return; }
-                statusEl.textContent=`Source: ${data.source} | Search ID: ${data.search_id||'n/a'}`;
-                const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
-                if(flights.length===0){ resEl.innerHTML='<p class="meta">No flights found.</p>'; return; }
+        return HTMLResponse("""<!DOCTYPE html><html lang='en'>
+        <head>
+            <meta charset='utf-8'/>
+            <meta name='viewport' content='width=device-width, initial-scale=1'/>
+            <meta http-equiv='Cache-Control' content='no-store'/>
+            <title>Flights – Search</title>
+            <style>
+                :root{--link:#1a0dab;--text:#202124;--muted:#4d5156;--accent:#1a73e8;--ok:#188038;--chip:#e8f0fe}
+                *{box-sizing:border-box}
+                body{font-family:Arial,Helvetica,sans-serif;color:var(--text);margin:0;background:#fff}
+                header{border-bottom:1px solid #eceff3}
+                .topbar{max-width:980px;margin:0 auto;display:flex;gap:12px;align-items:center;padding:10px 16px}
+                .logo{font-weight:700;color:#4285f4;letter-spacing:.5px}
+                .search{flex:1;display:flex;gap:8px}
+                .search input{flex:1;border:1px solid #dadce0;border-radius:24px;padding:.55rem .9rem;font-size:.95rem}
+                .search button{border:1px solid #dadce0;background:#f8f9fa;border-radius:24px;padding:.55rem .9rem;cursor:pointer}
+                .nav a{color:#5f6368;text-decoration:none;font-size:.9rem;margin-left:12px}
+                main{max-width:980px;margin:0 auto;padding:8px 16px}
+                .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
+                .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
+                .filters select{border:1px solid #dadce0;border-radius:8px;padding:.35rem .5rem}
+                .result{display:flex;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid #f1f3f4}
+                .result .left{flex:1;min-width:0}
+                .result .title{font-size:1.1rem;color:var(--link);margin:0 0 .2rem 0}
+                .crumbs{color:#5f6368;font-size:.85rem;margin-bottom:.25rem}
+                .snippet{color:var(--muted);font-size:.9rem;line-height:1.35rem}
+                .chips{margin-top:.35rem}
+                .chip{display:inline-block;background:var(--chip);color:#174ea6;border:1px solid #d2e3fc;padding:.1rem .5rem;border-radius:999px;font-size:.7rem;margin-right:.25rem}
+                .right{width:160px;text-align:right}
+                .price{color:var(--ok);font-weight:700;font-size:1.2rem}
+                .side{color:#5f6368;font-size:.8rem}
+                .pagination{display:flex;justify-content:center;gap:10px;margin:18px 0}
+                .pagination button{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.4rem .7rem;cursor:pointer}
+                .back{color:#5f6368;text-decoration:none;font-size:.85rem;margin-left:8px}
+                .error{color:#b91c1c}
+            </style>
+        </head>
+        <body>
+            <header>
+                <div class='topbar'>
+                    <div class='logo'>SerpFlights</div>
+                    <form id='fsForm' class='search'>
+                        <input id='origin_code' placeholder='Origin (e.g. JFK)' maxlength='5' required />
+                        <input id='destination' placeholder='Destination (e.g. LAX)' maxlength='5' required />
+                        <input id='date' type='date' required />
+                        <button type='submit'>Search</button>
+                    </form>
+                    <nav class='nav'>
+                        <a class='back' href='/dashboard'>&larr; Dashboard</a>
+                    </nav>
+                </div>
+            </header>
+            <main>
+                <div id='status' class='meta'>Enter origin, destination and date (YYYY-MM-DD).</div>
+                <div class='filters'>
+                    <div>Sort</div>
+                    <select id='sort'>
+                        <option value='relevance'>Relevance</option>
+                        <option value='price-asc'>Price: Low to high</option>
+                        <option value='duration-asc'>Duration: Shortest first</option>
+                        <option value='stops-asc'>Stops: Nonstop first</option>
+                    </select>
+                    <div style='flex:1'></div>
+                    <div id='count' class='meta'></div>
+                </div>
+                <div id='results'></div>
+                <div class='pagination' id='pager' style='display:none'>
+                    <button id='prevBtn' disabled>Previous</button>
+                    <div id='pageInfo' class='meta'></div>
+                    <button id='nextBtn' disabled>Next</button>
+                </div>
+            </main>
 
-                function fmtDuration(mins){ if(!mins||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h}h ${m}m`; }
-                function buildRoute(flt){
-                    const segs = flt.flights||[];
-                    if(!segs.length) return 'Flight';
-                    const first = segs[0].departure_airport?.id || '?';
-                    const last = segs[segs.length-1].arrival_airport?.id || '?';
-                    return `${first} → ${last}`;
+            <script>
+                const f=document.getElementById('fsForm');
+                const statusEl=document.getElementById('status');
+                const resEl=document.getElementById('results');
+                const originInput=document.getElementById('origin_code');
+                const destinationInput=document.getElementById('destination');
+                const dateInput=document.getElementById('date');
+                const sortSel=document.getElementById('sort');
+                const countEl=document.getElementById('count');
+                const pager=document.getElementById('pager');
+                const prevBtn=document.getElementById('prevBtn');
+                const nextBtn=document.getElementById('nextBtn');
+                const pageInfo=document.getElementById('pageInfo');
+
+                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1;
+                function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
+                dateInput.value=today();
+
+                function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+                function fmtDuration(mins){ if(!mins||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
+                function timePart(ts){ if(!ts) return ''; const t=(ts.split('T')[1]||ts).substring(0,5); return t; }
+                function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=segs[0].departure_airport?.id||'?'; const b=segs[segs.length-1].arrival_airport?.id||'?'; return `${a} → ${b}`; }
+                function buildStops(f){ const n=(f.flights||[]).length-1; return Math.max(0,n); }
+                function priceStr(p){ if(!p) return 'N/A'; return (p+"").includes('USD')?p:`${p} USD`; }
+                function airlinesStr(f){ const set=new Set((f.flights||[]).map(s=>s.airline).filter(Boolean)); return Array.from(set).join(', '); }
+                function normalize(list){
+                    return list.map(f=>{
+                        const segs=f.flights||[];
+                        const first=segs[0]||{}; const last=segs[segs.length-1]||{};
+                        return {
+                            raw:f,
+                            route: buildRoute(f),
+                            price: f.price,
+                            priceNum: parseFloat((f.price+"").replace(/[^0-9.]/g,'')) || Number.POSITIVE_INFINITY,
+                            duration: f.total_duration || f.duration || 0,
+                            stops: buildStops(f),
+                            airlines: airlinesStr(f),
+                            dep: timePart(first.departure_time||''),
+                            arr: timePart(last.arrival_time||''),
+                        };
+                    });
                 }
-                function buildStops(flt){ const segs=flt.flights||[]; return Math.max(0,segs.length-1); }
-                function priceStr(p){ if(!p) return 'N/A'; return p.toString().includes('USD')?p:`${p} USD`; }
-                function segmentLines(flt){
-                    const segs = flt.flights||[];
-                    return segs.map((s,i)=>{
-                        const dep = s.departure_airport?.id||'';
-                        const arr = s.arrival_airport?.id||'';
-                        const al = s.airline||'';
-                        const fn = s.flight_number||'';
-                        const dt = s.departure_time? (s.departure_time.split('T')[1]||s.departure_time) : '';
-                        const at = s.arrival_time? (s.arrival_time.split('T')[1]||s.arrival_time) : '';
-                        const dur = s.duration? `${s.duration}m` : '';
-                        return `<div class="seg"><span>${dep}→${arr}</span><span>${al}${fn?' '+fn:''}</span><span>${dt}→${at}</span><span>${dur}</span></div>`;
+                function applySort(list){
+                    const mode=sortSel.value;
+                    const arr=[...list];
+                    if(mode==='price-asc') arr.sort((a,b)=>a.priceNum-b.priceNum);
+                    else if(mode==='duration-asc') arr.sort((a,b)=>a.duration-b.duration);
+                    else if(mode==='stops-asc') arr.sort((a,b)=>a.stops-b.stops);
+                    return arr;
+                }
+                function render(){
+                    const sorted=applySort(ALL);
+                    const total=sorted.length; const totalPages=Math.max(1, Math.ceil(total/PAGE_SIZE));
+                    page=Math.min(Math.max(1,page), totalPages);
+                    const start=(page-1)*PAGE_SIZE; const slice=sorted.slice(start, start+PAGE_SIZE);
+                    countEl.textContent = total ? `About ${total} results — Source: ${META.source}` : '';
+                    pager.style.display = total>PAGE_SIZE ? 'flex' : 'none';
+                    prevBtn.disabled = page<=1; nextBtn.disabled = page>=totalPages; pageInfo.textContent = `Page ${page} of ${totalPages}`;
+                    resEl.innerHTML = slice.map(x=>{
+                        const chips = [x.airlines && `<span class='chip'>${x.airlines}</span>`, x.stops===0 && `<span class='chip'>Nonstop</span>`].filter(Boolean).join('');
+                        const segs=(x.raw.flights||[]).slice(0,3).map(s=>{
+                            const al=s.airline||''; const fn=s.flight_number||''; const dep=s.departure_airport?.id||''; const arr=s.arrival_airport?.id||''; const dt=timePart(s.departure_time||''); const at=timePart(s.arrival_time||'');
+                            return `${dep} ${dt} → ${arr} ${at}${al||fn?` — ${al}${fn?' '+fn:''}`:''}`;
+                        }).join(' · ');
+                        return `
+                            <div class='result'>
+                                <div class='left'>
+                                    <h3 class='title'>${x.route}</h3>
+                                    <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${x.dep || ''}${x.dep||x.arr?' → ':''}${x.arr||''}</div>
+                                    <div class='snippet'>${segs || 'Segment details unavailable.'}</div>
+                                    <div class='chips'>${chips}</div>
+                                </div>
+                                <div class='right'>
+                                    <div class='price'>${priceStr(x.price)}</div>
+                                    <div class='side'>${META.source||''}</div>
+                                </div>
+                            </div>`;
                     }).join('');
                 }
-                let html='<div class="grid">';
-                flights.slice(0,30).forEach(flt=>{
-                    const route = buildRoute(flt);
-                    const dur = fmtDuration(flt.total_duration || flt.duration);
-                    const stops = buildStops(flt);
-                    const segHTML = segmentLines(flt);
-                    html += `<div class='card'>
-                        <div class='src'>${route}</div>
-                        <div class='price'>${priceStr(flt.price)}</div>
-                        <div class='meta'>Duration: ${dur || '—'} | Stops: ${stops}</div>
-                        <div class='tags'>${flt.type?`<span class='pill'>${flt.type}</span>`:''}${flt.airline?`<span class='pill'>${flt.airline}</span>`:''}</div>
-                        <div class='segments'>${segHTML}</div>
-                    </div>`;
+
+                prevBtn.onclick=()=>{ page=Math.max(1,page-1); render(); }
+                nextBtn.onclick=()=>{ page=page+1; render(); }
+                sortSel.onchange=()=>{ page=1; render(); }
+
+                async function runSearch(o,d,dt){
+                    statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
+                    const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
+                    const r=await authFetch(url);
+                    if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
+                    const data=await r.json();
+                    if(!data.success){ statusEl.innerHTML='<span class="error">No results: '+(data.error||'unknown')+'</span>'; return; }
+                    const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
+                    META.source = data.source || '';
+                    if(!flights.length){ statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
+                    statusEl.textContent = `Showing results for ${o} → ${d} on ${dt}`;
+                    ALL = normalize(flights);
+                    page=1; render();
+                }
+
+                f.addEventListener('submit', (e)=>{
+                    e.preventDefault();
+                    const o=(originInput.value||'').trim().toUpperCase();
+                    const d=(destinationInput.value||'').trim().toUpperCase();
+                    const dt=dateInput.value;
+                    if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
+                    runSearch(o,d,dt);
                 });
-                html += '</div>';
-                resEl.innerHTML = html;
-            } catch(err){ 
-                console.error('Flight search exception', err);
-                statusEl.textContent='Error: '+err.message; 
-            }
-        });
-        </script>
-        </main></body></html>""")
+            </script>
+        </body></html>""")
 
 @app.get("/api/flight_search", response_class=JSONResponse, tags=["flight"])
 async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5, description="Origin IATA"),
