@@ -8,7 +8,7 @@ This directory will contain the upcoming web application layer for the flight da
 - Integrate later with existing flight search core modules.
 
 ## Current Status
-Initial scaffolding only. Authentication not yet implemented.
+Running: Auth, user bootstrap, JWT-based /auth endpoints, and a minimal UI with a working `/api/flight_search` proxy into the EnhancedFlightSearch client.
 
 ## Planned Stack (Subject to refinement)
 - Framework: FastAPI (async, modern, OpenAPI generation).
@@ -31,6 +31,16 @@ Initial scaffolding only. Authentication not yet implemented.
 4. Implement registration & login endpoints (issue JWT).
 5. Write tests under `tests/webapp/` for auth flows.
 
-## Commands (Future)
-See forthcoming documentation once app code lands.
+## How to run (Windows PowerShell)
+
+```powershell
+# From repo root
+.\scripts\bootstrap.ps1 -RunServer
+
+# Then visit:
+# http://127.0.0.1:8013/
+# Demo users are auto-created:
+#   user@local / user
+#   admin@local / admin
+```
 

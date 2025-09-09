@@ -579,6 +579,35 @@ class EnhancedFlightSearchClient:
             self.logger.error(f"Error getting cache stats: {str(e)}")
             return {'error': str(e)}
 
+    # ---------------- Small utility helpers -----------------
+    def _calculate_cache_age(self, cache_timestamp: str) -> float:
+        """Return cache age in hours given an ISO timestamp string.
+
+        Accepts naive or aware ISO-8601 strings. Naive values are treated as
+        local time (consistent with how created_at is currently stored).
+        Falls back to 0.0 hours on parse errors.
+        """
+        try:
+            # Handle common 'Z' suffix if present
+            ts = cache_timestamp.replace('Z', '+00:00') if isinstance(cache_timestamp, str) else cache_timestamp
+            dt = datetime.fromisoformat(ts)
+        except Exception:
+            try:
+                # Last-resort: some ISO strings may use space separator
+                dt = datetime.fromisoformat(str(cache_timestamp).strip().replace(' ', 'T'))
+            except Exception:
+                return 0.0
+        try:
+            if dt.tzinfo is None:
+                # Naive -> assume local clock
+                age_hours = (datetime.now() - dt).total_seconds() / 3600.0
+            else:
+                # Aware -> compare in the same tz
+                age_hours = (datetime.now(dt.tzinfo) - dt).total_seconds() / 3600.0
+            return max(0.0, age_hours)
+        except Exception:
+            return 0.0
+
     # ---------------- Internal structured storage (extracted) -----------------
     def _store_structured_data(self, search_id: str, search_params: dict[str, Any], api_response: dict[str, Any], api_query_id: int | None):
         """Persist normalized flight data (idempotent for a given search_id).

@@ -1,12 +1,13 @@
 # SerpAPI Flight Data System
 
-![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg) ![Status](https://img.shields.io/badge/status-stable-success.svg) ![Tests](https://raw.githubusercontent.com/samuelarosario/SerpAPI-V3/master/badges/tests.json) ![Coverage](https://raw.githubusercontent.com/samuelarosario/SerpAPI-V3/master/badges/coverage.json)
+![Version](https://img.shields.io/badge/version-v0.3.0-blue.svg) ![Status](https://img.shields.io/badge/status-stable-success.svg)
 
 Release v0.3.0: import path stabilization, metrics singleton guard, schema checksum + CLI JSON/force enhancements.
 See CHANGELOG for details.
 
-Badge automation: A GitHub Actions workflow (`tests-badge.yml`) runs on each push, executes pytest, and commits an updated `badges/tests.json` (shields.io JSON schema). You can embed via raw URL as above.
-\n+CI consolidation: Workflows merged into single `ci.yml` running tests on Python 3.11, 3.12, 3.13 and generating badges (tests & coverage) on master. Coverage threshold enforced by failing test job if tests fail.
+Badge automation: GitHub Actions will publish tests/coverage badges under this repository (SerpAPI-GPT5) once configured. Until then, dynamic badge links are intentionally omitted to avoid broken images.
+
+CI consolidation: Workflows are merged into a single `ci.yml` running tests on Python 3.11, 3.12, 3.13. Coverage thresholds are enforced by failing the test job if coverage drops below target.
 
 A comprehensive flight data collection, storage, and analysis system using SerpAPI Google Flights API.
 
@@ -40,14 +41,23 @@ SerpAPI/
 
 ## 🚀 Quick Start
 
-### 1. Setup
+### 1. Environment Setup (Persistent)
 
-```bash
-# Clone or navigate to project directory
-cd "C:\Users\MY PC\SerpAPI"
+Use the bootstrap script to create a local venv and install all dependencies (root + WebApp). This makes new sessions reproducible even after re-cloning the folder.
 
-# Install dependencies (if needed)
-pip install requests sqlite3
+```powershell
+# From repo root
+.\scriptsootstrap.ps1            # create .venv and install deps
+.\scriptsootstrap.ps1 -RunServer  # also start the WebApp on http://127.0.0.1:8013
+```
+
+Alternatively, manual setup:
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+# (optional) .\.venv\Scripts\python.exe -m pip install -r WebApp\webapp_requirements.txt
 ```
 
 ### 2. Configuration
@@ -59,6 +69,12 @@ pip install requests sqlite3
 ```
 
 **Security Note:** API keys are stored securely in environment variables only - never in plain text files.
+
+Tip: you can also create a .env in repo root for the WebApp config loader (not committed):
+```
+SERPAPI_KEY=your_actual_key
+WEBAPP_JWT_SECRET=change_me_dev_secret_change_me
+```
 
 ### 3. Database Setup
 
