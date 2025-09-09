@@ -107,6 +107,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             .crumbs{color:#5f6368;font-size:.85rem;margin-bottom:.25rem}
                 .chips{margin-top:.35rem}
                 .chip{display:inline-block;background:var(--chip);color:#174ea6;border:1px solid #d2e3fc;padding:.1rem .5rem;border-radius:999px;font-size:.7rem;margin-right:.25rem}
+            /* Two-column leg route with per-airport times */
+            .leg-route.two-col{display:flex;align-items:flex-start;gap:10px;justify-content:space-between}
+            .leg-route.two-col .loc{flex:1;min-width:0}
+            .leg-route.two-col .name{font-weight:600;color:#111827}
+            .leg-route.two-col .sub{color:var(--muted);font-size:.85rem;margin-top:2px}
+            .leg-route.two-col .arrow{color:#6b7280;padding:0 4px;align-self:center}
                 .right{width:160px;text-align:right}
                 .price{color:var(--ok);font-weight:700;font-size:1.2rem}
                 .side{color:#5f6368;font-size:.8rem}
@@ -310,17 +316,28 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                     const s=legs[i];
                                                     const depA=(s.departure_airport?.id||'').toUpperCase(); const arrA=(s.arrival_airport?.id||'').toUpperCase();
                                                     const dt=fmtTime(s.departure_time||''); const at=fmtTime(s.arrival_time||'');
-                                                    const dd=dayDiff(s.departure_time, s.arrival_time); const plus = dd>0? ` +${dd}`:'';
+                                                    const dd=dayDiff(s.departure_time, s.arrival_time); const plusDay = dd>0? ` + ${dd} day${dd>1?'s':''}`:'';
                                                     const durMin = (s.duration? Number(s.duration): null);
                                                     const durStr = durMin? fmtDuration(durMin) : '';
                                                     const al=s.airline||''; const fn=s.flight_number||'';
                                                     const depCity = cityOrName(depA); const arrCity = cityOrName(arrA);
+                                                    const depHM = inferHM(s.departure_time)||fmtTime(s.departure_time)||'';
+                                                    const arrHM = inferHM(s.arrival_time)||fmtTime(s.arrival_time)||'';
                                                     parts.push(`
                                                         <div class='leg'>
                                                             <div class='dot'></div>
                                                             <div class='leg-main'>
-                                                                <div class='leg-times'>${dt} – ${at}${plus}</div>
-                                                                <div class='leg-route'>${depCity} (${depA}) → ${arrCity} (${arrA})</div>
+                                                                <div class='leg-route two-col'>
+                                                                    <div class='loc'>
+                                                                        <div class='name'>${depCity} (${depA})</div>
+                                                                        <div class='sub time'>${depHM}</div>
+                                                                    </div>
+                                                                    <div class='arrow'>→</div>
+                                                                    <div class='loc'>
+                                                                        <div class='name'>${arrCity} (${arrA})</div>
+                                                                        <div class='sub time'>${arrHM}${plusDay}</div>
+                                                                    </div>
+                                                                </div>
                                                                 <div class='leg-meta'>${[al && al, fn && ('• '+fn), durStr && ('• '+durStr)].filter(Boolean).join(' ')}</div>
                                                             </div>
                                                         </div>
