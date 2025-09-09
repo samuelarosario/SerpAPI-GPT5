@@ -191,7 +191,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const nextBtn=document.getElementById('nextBtn');
                 const pageInfo=document.getElementById('pageInfo');
 
-                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null);
+                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT='';
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 dateInput.value=today();
 
@@ -231,17 +231,17 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 attachSuggest(destinationInput,'destList');
 
                 function fmtDuration(mins){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
-                function parseTs(ts){
+        function parseTs(ts){
                     if(!ts) return null;
                     if(typeof ts === 'number') return new Date(ts);
                     if(typeof ts === 'string'){
                         let s = ts.trim();
                         // If ISO-like, trust it
-                        if(/^\d{4}-\d{2}-\d{2}T/.test(s)){
+            if(/^[0-9]{4}-[0-9]{2}-[0-9]{2}T/.test(s)){
                             const d = new Date(s); if(!isNaN(d.getTime())) return d;
                         }
                         // Handle "YYYY-MM-DD HH:MM[:SS] [AM|PM]" -> build ISO local
-                        const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+            const m = s.match(/^([0-9]{4}-[0-9]{2}-[0-9]{2})[ T]([0-9]{1,2}):([0-9]{2})(?::([0-9]{2}))? *(AM|PM)?$/i);
                         if(m){
                             const date = m[1]; let hh = parseInt(m[2],10); const mm = m[3]; const ss = m[4]||'00'; const ap=m[5];
                             if(ap){ const isPM=/pm/i.test(ap); if(hh===12){ hh=isPM?12:0; } else { hh = isPM? hh+12 : hh; } }
@@ -250,7 +250,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                             if(!isNaN(d.getTime())) return d;
                         }
                         // Fallback: try replacing single space between date and time with T
-                        if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)){
+            if(/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}/.test(s)){
                             const d = new Date(s.replace(' ', 'T'));
                             if(!isNaN(d.getTime())) return d;
                         }
@@ -261,8 +261,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 }
                 function toDate(ts){ return parseTs(ts); }
                 function fmtTime(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
-                function inferHM(ts){ if(!ts) return ''; const s=String(ts); const m=s.match(/(\d{1,2}:\d{2})/); return m? m[1] : ''; }
+        function inferHM(ts){ if(!ts) return ''; const s=String(ts); const m=s.match(/([0-9]{1,2}:[0-9]{2}(?:[ ]*[AP]M)?)/i); return m? m[1] : ''; }
                 function dateShort(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleDateString([], {month:'short', day:'2-digit'}); }
+                function dateShortYMD(ymd){ if(!ymd) return ''; try{ const d=new Date(String(ymd).trim()+"T00:00:00"); if(!isNaN(d.getTime())){ return d.toLocaleDateString([], {month:'short', day:'2-digit'}); } }catch{} return ''; }
                 function dayDiff(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return 0; const ad=new Date(da.getFullYear(),da.getMonth(),da.getDate()); const bd=new Date(db.getFullYear(),db.getMonth(),db.getDate()); return Math.round((bd-ad)/86400000); }
                 function minutesBetween(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/60000)); }
                 function timePart(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
@@ -357,7 +358,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                 // Prefer raw strings when provided (avoid relying on parsing)
                                                 const depTimeStr = inferHM(first.departure_time) || fmtTime(first.departure_time) || (x.dep||'');
                                                 const arrTimeStr = inferHM(last.arrival_time) || fmtTime(last.arrival_time) || (x.arr||'');
-                                                const crumbTimes = `${depTimeStr || ''} (${dateShort(first.departure_time) || ''})${(depTimeStr||arrTimeStr)?' → ':''}${arrTimeStr || ''} (${dateShort(last.arrival_time) || ''})`;
+                                                const depDateStr = dateShort(first.departure_time) || (CURRENT_DT ? dateShortYMD(CURRENT_DT) : '');
+                                                const arrDateStr = dateShort(last.arrival_time) || (CURRENT_DT ? dateShortYMD(CURRENT_DT) : '');
+                                                const crumbTimes = `${depTimeStr || ''} (${depDateStr})${(depTimeStr||arrTimeStr)?' → ':''}${arrTimeStr || ''} (${arrDateStr})`;
                                     return `
                                         <details class='result' data-relidx='${start+idx}'>
                                             <summary>
@@ -394,6 +397,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 async function runSearch(o,d,dt){
                     statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
+                    CURRENT_DT = dt || '';
                     const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
                     const r=await authFetch(url);
                     if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }

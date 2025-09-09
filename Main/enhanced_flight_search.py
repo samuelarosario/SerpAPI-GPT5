@@ -257,14 +257,19 @@ class EnhancedFlightSearchClient:
                     pass
                 log_exception('efs.store.structured.error', search_id=search_id, exc=struct_err)
 
+            # After storing, load back from DB so UI always reads a single, consistent shape
+            try:
+                db_view = self.cache.search_cache(search_params, max_cache_age_hours)
+            except Exception:
+                db_view = None
             duration_ms = int((perf_counter() - op_start) * 1000)
             log_event('efs.search.success', search_id=search_id, source='api', duration_ms=duration_ms)
             return {
                 'success': True,
-                'source': 'api',
-                'data': api_data,
+                'source': 'api',  # fresh API, but data is normalized via DB
+                'data': db_view if db_view else api_data,
                 'search_id': search_id,
-                'message': 'Fresh data retrieved from API'
+                'message': 'Fresh data retrieved from API and normalized via DB' if db_view else 'Fresh data retrieved from API'
             }
         except Exception as e:
             self.logger.error(f"API call failed: {str(e)}")
