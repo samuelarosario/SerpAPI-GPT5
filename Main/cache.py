@@ -95,10 +95,27 @@ class FlightSearchCache:
                         """, (fid,)
                     )
                     seg_rows = cur.fetchall()
+                    # Fetch layovers (precomputed, static)
+                    cur.execute(
+                        """
+                        SELECT airport_code, duration_minutes, is_overnight
+                        FROM layovers WHERE flight_result_id = ?
+                        ORDER BY layover_order
+                        """,
+                        (fid,)
+                    )
+                    lay_rows = cur.fetchall()
                     flight_obj = {
                         'price': f'{price} {curr}' if price and curr else None,
                         'total_duration': duration,
-                        'layovers': [] if layovers == 0 else [{'duration': 'N/A'} for _ in range(layovers)],
+                        # Build layovers array from DB so UI can render without recomputing
+                        'layovers': [
+                            {
+                                'id': r[0],  # airport_code
+                                'duration': r[1],  # minutes
+                                'overnight': bool(r[2])
+                            } for r in lay_rows
+                        ],
                         'carbon_emissions': {'this_flight': carbon} if carbon else {},
                         'booking_token': booking_token,
                         'flights': []

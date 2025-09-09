@@ -95,6 +95,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 .nav a{color:#5f6368;text-decoration:none;font-size:.9rem;margin-left:12px}
                 main{max-width:980px;margin:0 auto;padding:8px 16px}
                 .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
+            .headline{color:var(--accent);font-size:1.35rem;font-weight:700;margin:.8rem 0;text-align:center}
             .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
                 .filters select{border:1px solid #dadce0;border-radius:8px;padding:.35rem .5rem}
             .filters .btn{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.35rem .6rem;cursor:pointer;font-size:.85rem}
@@ -102,7 +103,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             details.result > summary{list-style:none;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;cursor:pointer}
             details.result > summary::-webkit-details-marker{display:none}
             .result .left{flex:1;min-width:0}
-            .result .title{font-size:1.1rem;color:var(--link);margin:0 0 .2rem 0}
+            .result .title{font-size:1.1rem;color:var(--accent);margin:0 0 .2rem 0}
             .crumbs{color:#5f6368;font-size:.85rem;margin-bottom:.25rem}
                 .chips{margin-top:.35rem}
                 .chip{display:inline-block;background:var(--chip);color:#174ea6;border:1px solid #d2e3fc;padding:.1rem .5rem;border-radius:999px;font-size:.7rem;margin-right:.25rem}
@@ -184,7 +185,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const nextBtn=document.getElementById('nextBtn');
                 const pageInfo=document.getElementById('pageInfo');
 
-                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1;
+                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null);
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 dateInput.value=today();
 
@@ -224,12 +225,44 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 attachSuggest(destinationInput,'destList');
 
                 function fmtDuration(mins){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
-                function toDate(ts){ try{ return ts? new Date(ts) : null; }catch{ return null; } }
+                function parseTs(ts){
+                    if(!ts) return null;
+                    if(typeof ts === 'number') return new Date(ts);
+                    if(typeof ts === 'string'){
+                        let s = ts.trim();
+                        // If ISO-like, trust it
+                        if(/^\d{4}-\d{2}-\d{2}T/.test(s)){
+                            const d = new Date(s); if(!isNaN(d.getTime())) return d;
+                        }
+                        // Handle "YYYY-MM-DD HH:MM[:SS] [AM|PM]" -> build ISO local
+                        const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$/i);
+                        if(m){
+                            const date = m[1]; let hh = parseInt(m[2],10); const mm = m[3]; const ss = m[4]||'00'; const ap=m[5];
+                            if(ap){ const isPM=/pm/i.test(ap); if(hh===12){ hh=isPM?12:0; } else { hh = isPM? hh+12 : hh; } }
+                            const hh2 = ('0'+hh).slice(-2);
+                            const d = new Date(`${date}T${hh2}:${mm}:${ss}`);
+                            if(!isNaN(d.getTime())) return d;
+                        }
+                        // Fallback: try replacing single space between date and time with T
+                        if(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}/.test(s)){
+                            const d = new Date(s.replace(' ', 'T'));
+                            if(!isNaN(d.getTime())) return d;
+                        }
+                        const d2 = new Date(s);
+                        if(!isNaN(d2.getTime())) return d2;
+                    }
+                    try { const d=new Date(ts); return isNaN(d.getTime())? null : d; } catch { return null; }
+                }
+                function toDate(ts){ return parseTs(ts); }
                 function fmtTime(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'numeric', minute:'2-digit'}); }
+                function inferHM(ts){ if(!ts) return ''; const s=String(ts); const m=s.match(/(\d{1,2}:\d{2})/); return m? m[1] : ''; }
+                function dateShort(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleDateString([], {month:'short', day:'2-digit'}); }
                 function dayDiff(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return 0; const ad=new Date(da.getFullYear(),da.getMonth(),da.getDate()); const bd=new Date(db.getFullYear(),db.getMonth(),db.getDate()); return Math.round((bd-ad)/86400000); }
                 function minutesBetween(a,b){ const da=toDate(a), db=toDate(b); if(!da||!db) return null; return Math.max(0, Math.round((db-da)/60000)); }
-                function timePart(ts){ if(!ts) return ''; const t=(ts.split('T')[1]||ts).substring(0,5); return t; }
-                function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=segs[0].departure_airport?.id||'?'; const b=segs[segs.length-1].arrival_airport?.id||'?'; return `${a} → ${b}`; }
+                function timePart(ts){ const d=toDate(ts); if(!d) return ''; return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); }
+                function cityOrName(code){ const a=AIRPORTS && AIRPORTS[code]; return (a?.city || a?.name || code || ''); }
+                function nameOf(code){ const a=AIRPORTS && AIRPORTS[code]; return (a?.name || ''); }
+                function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=(segs[0].departure_airport?.id||'').toUpperCase(); const b=(segs[segs.length-1].arrival_airport?.id||'').toUpperCase(); const la=`${cityOrName(a)} (${a})`; const lb=`${cityOrName(b)} (${b})`; return `${la} → ${lb}`; }
                 function buildStops(f){ const n=(f.flights||[]).length-1; return Math.max(0,n); }
                 function priceStr(p){ if(!p) return 'N/A'; return (p+"").includes('USD')?p:`${p} USD`; }
                 function airlinesStr(f){ const set=new Set((f.flights||[]).map(s=>s.airline).filter(Boolean)); return Array.from(set).join(', '); }
@@ -247,6 +280,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                             airlines: airlinesStr(f),
                             dep: timePart(first.departure_time||''),
                             arr: timePart(last.arrival_time||''),
+                            depTS: first.departure_time||'',
+                            arrTS: last.arrival_time||'',
+                            layovers: Array.isArray(f.layovers) ? f.layovers : [],
                         };
                     });
                 }
@@ -272,37 +308,45 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                 const parts = [];
                                                 for(let i=0;i<legs.length;i++){
                                                     const s=legs[i];
-                                                    const depA=s.departure_airport?.id||''; const arrA=s.arrival_airport?.id||'';
+                                                    const depA=(s.departure_airport?.id||'').toUpperCase(); const arrA=(s.arrival_airport?.id||'').toUpperCase();
                                                     const dt=fmtTime(s.departure_time||''); const at=fmtTime(s.arrival_time||'');
                                                     const dd=dayDiff(s.departure_time, s.arrival_time); const plus = dd>0? ` +${dd}`:'';
                                                     const durMin = (s.duration? Number(s.duration): null);
                                                     const durStr = durMin? fmtDuration(durMin) : '';
                                                     const al=s.airline||''; const fn=s.flight_number||'';
+                                                    const depCity = cityOrName(depA); const arrCity = cityOrName(arrA);
                                                     parts.push(`
                                                         <div class='leg'>
                                                             <div class='dot'></div>
                                                             <div class='leg-main'>
                                                                 <div class='leg-times'>${dt} – ${at}${plus}</div>
-                                                                <div class='leg-route'>${depA} → ${arrA}</div>
+                                                                <div class='leg-route'>${depCity} (${depA}) → ${arrCity} (${arrA})</div>
                                                                 <div class='leg-meta'>${[al && al, fn && ('• '+fn), durStr && ('• '+durStr)].filter(Boolean).join(' ')}</div>
                                                             </div>
                                                         </div>
                                                     `);
-                                                    if(i<legs.length-1){
-                                                        const next=legs[i+1];
-                                                        const mins = minutesBetween(s.arrival_time, next.departure_time);
-                                                        const overnight = dayDiff(s.arrival_time, next.departure_time) > 0;
-                                                        const lay = `${fmtDuration(mins||0)} layover • ${next.departure_airport?.id||''}`;
-                                                        parts.push(`<div class='layover ${overnight?'warn':''}'>${lay}${overnight?' • Overnight layover ⚠️':''}</div>`);
+                                                    // Render provided layovers if present at matching index
+                                                    if(i < x.layovers.length){
+                                                        const lay = x.layovers[i];
+                                                        const code = (lay?.id || '').toUpperCase();
+                                                        const mins = Number(lay?.duration) || 0;
+                                                        const overnight = !!lay?.overnight;
+                                                        const label = `${fmtDuration(mins)} layover • ${cityOrName(code)} (${code})`;
+                                                        parts.push(`<div class='layover ${overnight?'warn':''}'>${label}${overnight?' • Overnight layover ⚠️':''}</div>`);
                                                     }
                                                 }
                                                 const segsFull = `<div class='itinerary'>${parts.join('')}</div>`;
+                                                const first=legs[0]||{}; const last=legs[legs.length-1]||{};
+                                                // Prefer raw strings when provided (avoid relying on parsing)
+                                                const depTimeStr = inferHM(first.departure_time) || fmtTime(first.departure_time) || (x.dep||'');
+                                                const arrTimeStr = inferHM(last.arrival_time) || fmtTime(last.arrival_time) || (x.arr||'');
+                                                const crumbTimes = `${depTimeStr || ''} (${dateShort(first.departure_time) || ''})${(depTimeStr||arrTimeStr)?' → ':''}${arrTimeStr || ''} (${dateShort(last.arrival_time) || ''})`;
                                     return `
                                         <details class='result' data-relidx='${start+idx}'>
                                             <summary>
                                                 <div class='left'>
                                                     <h3 class='title'>${x.route}</h3>
-                                                    <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${x.dep || ''}${x.dep||x.arr?' → ':''}${x.arr||''}</div>
+                                                    <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${crumbTimes}</div>
                                                     <div class='chips'>${chips}</div>
                                                     <div class='rowActions'>
                                                         <button type='button' class='toggleLink' data-role='toggle'>Show details</button>
@@ -331,6 +375,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 sortSel.onchange=()=>{ page=1; render(); }
 
                 async function runSearch(o,d,dt){
+                    statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
                     const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
                     const r=await authFetch(url);
@@ -339,8 +384,28 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     if(!data.success){ statusEl.innerHTML='<span class="error">No results: '+(data.error||'unknown')+'</span>'; return; }
                     const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
                     META.source = data.source || '';
-                    if(!flights.length){ statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
-                    statusEl.textContent = `Showing results for ${o} → ${d} on ${dt}`;
+                    if(!flights.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
+                    // Build list of unique airport codes and fetch airport details in batch
+                    const setCodes = new Set([o.toUpperCase(), d.toUpperCase()]);
+                    for(const f of flights){ for(const s of (f.flights||[])){ const a=(s?.departure_airport?.id||'').toUpperCase(); const b=(s?.arrival_airport?.id||'').toUpperCase(); if(a) setCodes.add(a); if(b) setCodes.add(b); } }
+                    try{
+                        const list = Array.from(setCodes).join(',');
+                        const rr = await authFetch(`/api/airports/by_codes?codes=${encodeURIComponent(list)}`);
+                        if(rr.ok){ const arr = await rr.json(); const map = Object.create(null); (arr||[]).forEach(it=>{ if(it && it.code){ map[(it.code||'').toUpperCase()] = it; } }); AIRPORTS = map; }
+                    }catch{}
+                    // Resolve friendly names for origin/destination for a larger heading
+                    async function fetchAirport(code){
+                        try{
+                            const rr = await authFetch(`/api/airports/by_code?code=${encodeURIComponent(code)}`);
+                            if(!rr.ok) return null;
+                            return await rr.json();
+                        }catch{return null}
+                    }
+                    const [ao, ad] = await Promise.all([fetchAirport(o), fetchAirport(d)]);
+                    const oLabel = `${(ao?.city||ao?.name||o)} (${o})`;
+                    const dLabel = `${(ad?.city||ad?.name||d)} (${d})`;
+                    statusEl.className='headline';
+                    statusEl.textContent = `${oLabel} to ${dLabel} on ${dt}`;
                     ALL = normalize(flights);
                     page=1; render();
                 }
@@ -415,6 +480,50 @@ async def airports_suggest(q: str = Query(..., min_length=1, max_length=64), lim
     )
     with engine.connect() as conn:
         rows = conn.execute(sql, {"like": like, "limit": limit}).mappings().fetchall()
+        out = [dict(r) for r in rows]
+    return JSONResponse(out)
+
+
+@app.get("/api/airports/by_code", response_class=JSONResponse, tags=["airports"])
+async def airport_by_code(code: str = Query(..., min_length=3, max_length=5)):
+    code = code.strip().upper()
+    if not code:
+        raise HTTPException(status_code=400, detail="code required")
+    sql = text(
+        """
+        SELECT airport_code AS code, airport_name AS name, country, country_code, city
+        FROM airports
+        WHERE airport_code = :code
+        LIMIT 1
+        """
+    )
+    with engine.connect() as conn:
+        row = conn.execute(sql, {"code": code}).mappings().fetchone()
+        if not row:
+            return JSONResponse({}, status_code=200)
+        return JSONResponse(dict(row))
+
+@app.get("/api/airports/by_codes", response_class=JSONResponse, tags=["airports"])
+async def airports_by_codes(codes: str = Query(..., description="Comma-separated IATA codes")):
+    # Normalize codes to upper and unique
+    codes_list = [c.strip().upper() for c in codes.split(',') if c.strip()]
+    if not codes_list:
+        return JSONResponse([])
+    # SQLite doesn't support array params natively; build placeholders safely
+    # Cap to a reasonable number to avoid too-large queries
+    codes_list = codes_list[:200]
+    placeholders = ','.join([f":c{i}" for i in range(len(codes_list))])
+    params = {f"c{i}": code for i, code in enumerate(codes_list)}
+    sql = text(
+        f"""
+        SELECT airport_code AS code, airport_name AS name, country, country_code, city
+        FROM airports
+        WHERE airport_code IN ({placeholders})
+        ORDER BY airport_code ASC
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).mappings().fetchall()
         out = [dict(r) for r in rows]
     return JSONResponse(out)
 
