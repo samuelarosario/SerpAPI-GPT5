@@ -404,7 +404,17 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     if(!flights.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
                     // Build list of unique airport codes and fetch airport details in batch
                     const setCodes = new Set([o.toUpperCase(), d.toUpperCase()]);
-                    for(const f of flights){ for(const s of (f.flights||[])){ const a=(s?.departure_airport?.id||'').toUpperCase(); const b=(s?.arrival_airport?.id||'').toUpperCase(); if(a) setCodes.add(a); if(b) setCodes.add(b); } }
+                    for(const f of flights){
+                        for(const s of (f.flights||[])){
+                            const a=(s?.departure_airport?.id||'').toUpperCase();
+                            const b=(s?.arrival_airport?.id||'').toUpperCase();
+                            if(a) setCodes.add(a); if(b) setCodes.add(b);
+                        }
+                        // include layover airports so labels render properly
+                        for(const lay of (f.layovers||[])){
+                            const c=(lay?.id||'').toUpperCase(); if(c) setCodes.add(c);
+                        }
+                    }
                     try{
                         const list = Array.from(setCodes).join(',');
                         const rr = await authFetch(`/api/airports/by_codes?codes=${encodeURIComponent(list)}`);

@@ -86,6 +86,7 @@ class FlightSearchCache:
                 )
                 flights = cur.fetchall()
                 best, other = [], []
+                any_segments = False
                 for (fid, price, curr, duration, layovers, rt, carbon, booking_token) in flights:
                     cur.execute(
                         """
@@ -131,8 +132,24 @@ class FlightSearchCache:
                             'arrival_time': arr_t,
                             'duration': seg_dur
                         })
+                    if flight_obj['flights']:
+                        any_segments = True
                     norm_type = 'best' if rt in ('best', 'best_flight') else 'other'
                     (best if norm_type == 'best' else other).append(flight_obj)
+                # If structured cache has no segment details at all, fall back to raw API payload for UI completeness
+                if not any_segments:
+                    try:
+                        api_query_id = row['api_query_id'] if 'api_query_id' in row.keys() else None
+                        if api_query_id:
+                            cur.execute("SELECT raw_response FROM api_queries WHERE id = ?", (api_query_id,))
+                            raw_row = cur.fetchone()
+                            if raw_row and raw_row[0]:
+                                raw = json.loads(raw_row[0])
+                                best = raw.get('best_flights', []) or []
+                                other = raw.get('other_flights', []) or []
+                                self.logger.info(f"[{hit_search_id}] Using raw API fallback for UI (no segments in structured cache)")
+                    except Exception as _e:
+                        self.logger.warning(f"Raw fallback unavailable: {_e}")
                 return {
                     'search_id': row['search_id'],
                     'search_parameters': json.loads(row['raw_parameters']) if row['raw_parameters'] else {},
