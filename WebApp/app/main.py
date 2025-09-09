@@ -95,16 +95,20 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
                 .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
                 .filters select{border:1px solid #dadce0;border-radius:8px;padding:.35rem .5rem}
-                .result{display:flex;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid #f1f3f4}
-                .result .left{flex:1;min-width:0}
-                .result .title{font-size:1.1rem;color:var(--link);margin:0 0 .2rem 0}
-                .crumbs{color:#5f6368;font-size:.85rem;margin-bottom:.25rem}
-                .snippet{color:var(--muted);font-size:.9rem;line-height:1.35rem}
+            details.result{padding:10px 0;border-bottom:1px solid #f1f3f4}
+            details.result > summary{list-style:none;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;cursor:pointer}
+            details.result > summary::-webkit-details-marker{display:none}
+            .result .left{flex:1;min-width:0}
+            .result .title{font-size:1.1rem;color:var(--link);margin:0 0 .2rem 0}
+            .crumbs{color:#5f6368;font-size:.85rem;margin-bottom:.25rem}
                 .chips{margin-top:.35rem}
                 .chip{display:inline-block;background:var(--chip);color:#174ea6;border:1px solid #d2e3fc;padding:.1rem .5rem;border-radius:999px;font-size:.7rem;margin-right:.25rem}
                 .right{width:160px;text-align:right}
                 .price{color:var(--ok);font-weight:700;font-size:1.2rem}
                 .side{color:#5f6368;font-size:.8rem}
+            .segments{margin-top:.6rem;border-left:3px solid #e8eaed;padding-left:10px}
+            .seg{color:#3c4043;font-size:.9rem;line-height:1.35rem;margin:.2rem 0}
+            .detailsHint{color:#5f6368;font-size:.8rem;margin-top:.2rem}
                 .pagination{display:flex;justify-content:center;gap:10px;margin:18px 0}
                 .pagination button{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.4rem .7rem;cursor:pointer}
                 .back{color:#5f6368;text-decoration:none;font-size:.85rem;margin-left:8px}
@@ -205,26 +209,30 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     countEl.textContent = total ? `About ${total} results — Source: ${META.source}` : '';
                     pager.style.display = total>PAGE_SIZE ? 'flex' : 'none';
                     prevBtn.disabled = page<=1; nextBtn.disabled = page>=totalPages; pageInfo.textContent = `Page ${page} of ${totalPages}`;
-                    resEl.innerHTML = slice.map(x=>{
-                        const chips = [x.airlines && `<span class='chip'>${x.airlines}</span>`, x.stops===0 && `<span class='chip'>Nonstop</span>`].filter(Boolean).join('');
-                        const segs=(x.raw.flights||[]).slice(0,3).map(s=>{
-                            const al=s.airline||''; const fn=s.flight_number||''; const dep=s.departure_airport?.id||''; const arr=s.arrival_airport?.id||''; const dt=timePart(s.departure_time||''); const at=timePart(s.arrival_time||'');
-                            return `${dep} ${dt} → ${arr} ${at}${al||fn?` — ${al}${fn?' '+fn:''}`:''}`;
-                        }).join(' · ');
-                        return `
-                            <div class='result'>
-                                <div class='left'>
-                                    <h3 class='title'>${x.route}</h3>
-                                    <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${x.dep || ''}${x.dep||x.arr?' → ':''}${x.arr||''}</div>
-                                    <div class='snippet'>${segs || 'Segment details unavailable.'}</div>
-                                    <div class='chips'>${chips}</div>
-                                </div>
-                                <div class='right'>
-                                    <div class='price'>${priceStr(x.price)}</div>
-                                    <div class='side'>${META.source||''}</div>
-                                </div>
-                            </div>`;
-                    }).join('');
+                                resEl.innerHTML = slice.map(x=>{
+                                    const chips = [x.airlines && `<span class='chip'>${x.airlines}</span>`, x.stops===0 && `<span class='chip'>Nonstop</span>`].filter(Boolean).join('');
+                                    const segsFull=(x.raw.flights||[]).map(s=>{
+                                        const al=s.airline||''; const fn=s.flight_number||''; const dep=s.departure_airport?.id||''; const arr=s.arrival_airport?.id||''; const dt=timePart(s.departure_time||''); const at=timePart(s.arrival_time||'');
+                                        const dur=(s.duration?`${s.duration}m`:"");
+                                        return `<div class='seg'>${dep} ${dt} → ${arr} ${at}${dur?` • ${dur}`:''}${al||fn?` — ${al}${fn?' '+fn:''}`:''}</div>`;
+                                    }).join('');
+                                    return `
+                                        <details class='result'>
+                                            <summary>
+                                                <div class='left'>
+                                                    <h3 class='title'>${x.route}</h3>
+                                                    <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${x.dep || ''}${x.dep||x.arr?' → ':''}${x.arr||''}</div>
+                                                    <div class='chips'>${chips}</div>
+                                                    <div class='detailsHint'>Click to view segments</div>
+                                                </div>
+                                                <div class='right'>
+                                                    <div class='price'>${priceStr(x.price)}</div>
+                                                    <div class='side'>${META.source||''}</div>
+                                                </div>
+                                            </summary>
+                                            <div class='segments'>${segsFull || '<div class="seg">No segment details.</div>'}</div>
+                                        </details>`;
+                                }).join('');
                 }
 
                 prevBtn.onclick=()=>{ page=Math.max(1,page-1); render(); }
