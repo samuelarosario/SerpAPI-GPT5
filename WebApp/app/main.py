@@ -110,6 +110,8 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             .segments{margin-top:.6rem;border-left:3px solid #e8eaed;padding-left:10px}
             .seg{color:#3c4043;font-size:.9rem;line-height:1.35rem;margin:.2rem 0}
             .detailsHint{color:#5f6368;font-size:.8rem;margin-top:.2rem}
+            .rowActions{margin-top:.3rem}
+            .toggleLink{border:1px solid #dadce0;background:#fff;border-radius:4px;padding:.2rem .45rem;cursor:pointer;font-size:.8rem;color:#1a73e8}
                 .pagination{display:flex;justify-content:center;gap:10px;margin:18px 0}
                 .pagination button{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.4rem .7rem;cursor:pointer}
                 .back{color:#5f6368;text-decoration:none;font-size:.85rem;margin-left:8px}
@@ -141,10 +143,8 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         <option value='duration-asc'>Duration: Shortest first</option>
                         <option value='stops-asc'>Stops: Nonstop first</option>
                     </select>
-                            <div style='flex:1'></div>
-                            <button id='expandAll' class='btn' style='display:none'>Expand all</button>
-                            <button id='collapseAll' class='btn' style='display:none'>Collapse all</button>
-                    <div id='count' class='meta'></div>
+                <div style='flex:1'></div>
+            <div id='count' class='meta'></div>
                 </div>
                 <div id='results'></div>
                 <div class='pagination' id='pager' style='display:none'>
@@ -228,7 +228,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                     <h3 class='title'>${x.route}</h3>
                                                     <div class='crumbs'>${fmtDuration(x.duration) || '—'} • ${x.stops} stop${x.stops===1?'':'s'} • ${x.dep || ''}${x.dep||x.arr?' → ':''}${x.arr||''}</div>
                                                     <div class='chips'>${chips}</div>
-                                                    <div class='detailsHint'>Click to view segments</div>
+                                                    <div class='rowActions'>
+                                                        <button type='button' class='toggleLink' data-role='toggle'>Show details</button>
+                                                    </div>
                                                 </div>
                                                 <div class='right'>
                                                     <div class='price'>${priceStr(x.price)}</div>
@@ -238,12 +240,14 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                             <div class='segments'>${segsFull || '<div class="seg">No segment details.</div>'}</div>
                                         </details>`;
                                 }).join('');
-                                // Make summaries keyboard-focusable and toggle buttons visible
+                                // Make summaries keyboard-focusable and sync toggle button text
                                 const detailsList = Array.from(resEl.querySelectorAll('details.result'));
-                                detailsList.forEach(d=>{ const sum=d.querySelector('summary'); if(sum) sum.tabIndex=0; });
-                                const hasAny = detailsList.length>0;
-                                expandAllBtn.style.display = hasAny ? 'inline-block' : 'none';
-                                collapseAllBtn.style.display = hasAny ? 'inline-block' : 'none';
+                                detailsList.forEach(d=>{
+                                    const sum=d.querySelector('summary'); if(sum) sum.tabIndex=0;
+                                    const btn=d.querySelector('.toggleLink');
+                                    const setText=()=>{ if(btn) btn.textContent = d.open ? 'Hide details' : 'Show details'; };
+                                    setText(); d.addEventListener('toggle', setText);
+                                });
                 }
 
                 prevBtn.onclick=()=>{ page=Math.max(1,page-1); render(); }
@@ -274,12 +278,15 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     runSearch(o,d,dt);
                 });
 
-                        // Expand/Collapse controls
-                        function setAll(open){
-                            resEl.querySelectorAll('details.result').forEach(d=>{ d.open = open; });
-                        }
-                        expandAllBtn.onclick=()=> setAll(true);
-                        collapseAllBtn.onclick=()=> setAll(false);
+                        // Per-result toggle button (inside each item)
+                        resEl.addEventListener('click', (e)=>{
+                            const t=e.target;
+                            if(t && t.classList && t.classList.contains('toggleLink')){
+                                e.preventDefault();
+                                const details = t.closest('details.result');
+                                if(details){ details.open = !details.open; }
+                            }
+                        });
 
                         // Keyboard navigation for results
                         function isTypingTarget(t){ const tag=(t?.tagName||'').toUpperCase(); return tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT'; }
@@ -295,10 +302,6 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                 e.preventDefault(); const cur=currentResultIndex(); focusResultAt(cur<=0?0:cur-1);
                             } else if(e.key==='Enter' || e.key===' '){
                                 const cur=currentResultIndex(); if(cur>=0){ e.preventDefault(); const det=resultList()[cur]; det.open = !det.open; }
-                            } else if(e.key.toLowerCase && e.key.toLowerCase()==='e'){
-                                e.preventDefault(); setAll(true);
-                            } else if(e.key.toLowerCase && e.key.toLowerCase()==='c'){
-                                e.preventDefault(); setAll(false);
                             }
                         });
             </script>
