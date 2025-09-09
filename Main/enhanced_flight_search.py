@@ -640,31 +640,61 @@ class EnhancedFlightSearchClient:
                     self.logger.warning("Skipping structured storage: missing airports for search dep=%s arr=%s", dep_code, arr_code)
                     return
 
-                # Collect airline codes; do not touch airports
-                seg_airlines: set[str] = set()
+                # Collect airline codes (IATA/ICAO) from segments; do not touch airports
+                def _canon_airline(code: Any) -> str:
+                    s = str(code).strip().upper() if code else ''
+                    return s if (2 <= len(s) <= 3 and s.isalnum()) else ''
+                airlines: dict[str, str] = {}
                 for group in (api_response.get('best_flights', []), api_response.get('other_flights', [])):
                     for flight in group:
                         for seg in flight.get('flights', []):
-                            al = seg.get('airline')
-                            if al:
-                                seg_airlines.add(al.upper())
-                for al in seg_airlines:
-                    cur.execute("INSERT OR IGNORE INTO airlines(airline_code, airline_name) VALUES (?, ?)", (al, al))
+                            code = _canon_airline(seg.get('airline_code') or seg.get('airline'))
+                            name = (seg.get('airline') or code or '').strip()
+                            if code:
+                                airlines[code] = name
+                for code, name in airlines.items():
+                    cur.execute("INSERT OR IGNORE INTO airlines(airline_code, airline_name) VALUES (?, ?)", (code, name or code))
 
                 # Idempotent cleanup
+                # Also proactively remove any orphaned price_insights left from legacy runs
+                try:
+                    cur.execute("DELETE FROM price_insights WHERE search_id NOT IN (SELECT search_id FROM flight_searches)")
+                except Exception:
+                    pass
                 cur.execute("DELETE FROM layovers WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = ?)", (search_id,))
                 cur.execute("DELETE FROM flight_segments WHERE flight_result_id IN (SELECT id FROM flight_results WHERE search_id = ?)", (search_id,))
                 cur.execute("DELETE FROM flight_results WHERE search_id = ?", (search_id,))
                 cur.execute("DELETE FROM price_insights WHERE search_id = ?", (search_id,))
+                # Upsert using ON CONFLICT to avoid REPLACE (which deletes parent rows and can violate FKs)
                 cur.execute(
                     """
-                    INSERT OR REPLACE INTO flight_searches (
+                    INSERT INTO flight_searches (
                         search_id, search_timestamp, departure_airport_code, arrival_airport_code,
                         outbound_date, return_date, flight_type, adults, children,
                         infants_in_seat, infants_on_lap, travel_class, currency,
                         country_code, language_code, raw_parameters, response_status,
                         total_results, cache_key, api_query_id, created_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(search_id) DO UPDATE SET
+                        search_timestamp=excluded.search_timestamp,
+                        departure_airport_code=excluded.departure_airport_code,
+                        arrival_airport_code=excluded.arrival_airport_code,
+                        outbound_date=excluded.outbound_date,
+                        return_date=excluded.return_date,
+                        flight_type=excluded.flight_type,
+                        adults=excluded.adults,
+                        children=excluded.children,
+                        infants_in_seat=excluded.infants_in_seat,
+                        infants_on_lap=excluded.infants_on_lap,
+                        travel_class=excluded.travel_class,
+                        currency=excluded.currency,
+                        country_code=excluded.country_code,
+                        language_code=excluded.language_code,
+                        raw_parameters=excluded.raw_parameters,
+                        response_status=excluded.response_status,
+                        total_results=excluded.total_results,
+                        cache_key=excluded.cache_key,
+                        api_query_id=excluded.api_query_id
                     """,
                     (
                         search_id,
@@ -740,12 +770,26 @@ class EnhancedFlightSearchClient:
                                 # Only include segments when both airports exist
                                 if not (_airport_exists(dep_code_seg) and _airport_exists(arr_code_seg)):
                                     continue
+                                al_code = _canon_airline(seg.get('airline_code') or seg.get('airline'))
+                                # If missing/invalid, derive from airline name or use 'ZZ' fallback to keep segment (FK-safe)
+                                if not al_code:
+                                    name_raw = (seg.get('airline') or '').upper()
+                                    derived = ''.join(ch for ch in name_raw if ch.isalnum())[:3]
+                                    if len(derived) >= 2:
+                                        al_code = derived[:3]
+                                    else:
+                                        al_code = 'ZZ'
+                                # Ensure airline row exists for FK
+                                try:
+                                    cur.execute("INSERT OR IGNORE INTO airlines(airline_code, airline_name) VALUES (?, ?)", (al_code, (seg.get('airline') or al_code)))
+                                except Exception:
+                                    pass
                                 segment_rows.append((
                                     fid, order,
                                     dep_code_seg, dep.get('time'),
                                     arr_code_seg, arr.get('time'),
                                     seg.get('duration'), seg.get('airplane'),
-                                    seg.get('airline'), seg.get('flight_number'),
+                                    al_code, seg.get('flight_number'),
                                     seg.get('travel_class'), seg.get('legroom'),
                                     seg.get('often_delayed_by_over_30_min', False),
                                     json.dumps(seg.get('extensions', [])),
