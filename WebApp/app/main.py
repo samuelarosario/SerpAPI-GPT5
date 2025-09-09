@@ -93,8 +93,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 .nav a{color:#5f6368;text-decoration:none;font-size:.9rem;margin-left:12px}
                 main{max-width:980px;margin:0 auto;padding:8px 16px}
                 .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
-                .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
+            .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
                 .filters select{border:1px solid #dadce0;border-radius:8px;padding:.35rem .5rem}
+            .filters .btn{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.35rem .6rem;cursor:pointer;font-size:.85rem}
             details.result{padding:10px 0;border-bottom:1px solid #f1f3f4}
             details.result > summary{list-style:none;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;cursor:pointer}
             details.result > summary::-webkit-details-marker{display:none}
@@ -132,7 +133,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             </header>
             <main>
                 <div id='status' class='meta'>Enter origin, destination and date (YYYY-MM-DD).</div>
-                <div class='filters'>
+                        <div class='filters'>
                     <div>Sort</div>
                     <select id='sort'>
                         <option value='relevance'>Relevance</option>
@@ -140,7 +141,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         <option value='duration-asc'>Duration: Shortest first</option>
                         <option value='stops-asc'>Stops: Nonstop first</option>
                     </select>
-                    <div style='flex:1'></div>
+                            <div style='flex:1'></div>
+                            <button id='expandAll' class='btn' style='display:none'>Expand all</button>
+                            <button id='collapseAll' class='btn' style='display:none'>Collapse all</button>
                     <div id='count' class='meta'></div>
                 </div>
                 <div id='results'></div>
@@ -159,7 +162,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const destinationInput=document.getElementById('destination');
                 const dateInput=document.getElementById('date');
                 const sortSel=document.getElementById('sort');
-                const countEl=document.getElementById('count');
+            const countEl=document.getElementById('count');
+            const expandAllBtn=document.getElementById('expandAll');
+            const collapseAllBtn=document.getElementById('collapseAll');
                 const pager=document.getElementById('pager');
                 const prevBtn=document.getElementById('prevBtn');
                 const nextBtn=document.getElementById('nextBtn');
@@ -206,10 +211,10 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const total=sorted.length; const totalPages=Math.max(1, Math.ceil(total/PAGE_SIZE));
                     page=Math.min(Math.max(1,page), totalPages);
                     const start=(page-1)*PAGE_SIZE; const slice=sorted.slice(start, start+PAGE_SIZE);
-                    countEl.textContent = total ? `About ${total} results — Source: ${META.source}` : '';
+                                countEl.textContent = total ? `About ${total} results — Source: ${META.source}` : '';
                     pager.style.display = total>PAGE_SIZE ? 'flex' : 'none';
                     prevBtn.disabled = page<=1; nextBtn.disabled = page>=totalPages; pageInfo.textContent = `Page ${page} of ${totalPages}`;
-                                resEl.innerHTML = slice.map(x=>{
+                                resEl.innerHTML = slice.map((x,idx)=>{
                                     const chips = [x.airlines && `<span class='chip'>${x.airlines}</span>`, x.stops===0 && `<span class='chip'>Nonstop</span>`].filter(Boolean).join('');
                                     const segsFull=(x.raw.flights||[]).map(s=>{
                                         const al=s.airline||''; const fn=s.flight_number||''; const dep=s.departure_airport?.id||''; const arr=s.arrival_airport?.id||''; const dt=timePart(s.departure_time||''); const at=timePart(s.arrival_time||'');
@@ -217,7 +222,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                         return `<div class='seg'>${dep} ${dt} → ${arr} ${at}${dur?` • ${dur}`:''}${al||fn?` — ${al}${fn?' '+fn:''}`:''}</div>`;
                                     }).join('');
                                     return `
-                                        <details class='result'>
+                                        <details class='result' data-relidx='${start+idx}'>
                                             <summary>
                                                 <div class='left'>
                                                     <h3 class='title'>${x.route}</h3>
@@ -233,6 +238,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                             <div class='segments'>${segsFull || '<div class="seg">No segment details.</div>'}</div>
                                         </details>`;
                                 }).join('');
+                                // Make summaries keyboard-focusable and toggle buttons visible
+                                const detailsList = Array.from(resEl.querySelectorAll('details.result'));
+                                detailsList.forEach(d=>{ const sum=d.querySelector('summary'); if(sum) sum.tabIndex=0; });
+                                const hasAny = detailsList.length>0;
+                                expandAllBtn.style.display = hasAny ? 'inline-block' : 'none';
+                                collapseAllBtn.style.display = hasAny ? 'inline-block' : 'none';
                 }
 
                 prevBtn.onclick=()=>{ page=Math.max(1,page-1); render(); }
@@ -254,7 +265,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     page=1; render();
                 }
 
-                f.addEventListener('submit', (e)=>{
+                        f.addEventListener('submit', (e)=>{
                     e.preventDefault();
                     const o=(originInput.value||'').trim().toUpperCase();
                     const d=(destinationInput.value||'').trim().toUpperCase();
@@ -262,6 +273,34 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
                     runSearch(o,d,dt);
                 });
+
+                        // Expand/Collapse controls
+                        function setAll(open){
+                            resEl.querySelectorAll('details.result').forEach(d=>{ d.open = open; });
+                        }
+                        expandAllBtn.onclick=()=> setAll(true);
+                        collapseAllBtn.onclick=()=> setAll(false);
+
+                        // Keyboard navigation for results
+                        function isTypingTarget(t){ const tag=(t?.tagName||'').toUpperCase(); return tag==='INPUT' || tag==='TEXTAREA' || tag==='SELECT'; }
+                        function resultList(){ return Array.from(resEl.querySelectorAll('details.result')); }
+                        function focusResultAt(i){ const list=resultList(); if(!list.length) return; const idx=Math.max(0, Math.min(i, list.length-1)); const sum=list[idx].querySelector('summary'); if(sum){ sum.focus(); } }
+                        function currentResultIndex(){ const ae=document.activeElement; if(!ae) return -1; const sum=ae.closest ? ae.closest('details.result summary') : null; const det= sum ? sum.parentElement : (ae.closest ? ae.closest('details.result') : null); if(!det) return -1; const list=resultList(); return list.indexOf(det); }
+                        document.addEventListener('keydown', (e)=>{
+                            if(isTypingTarget(e.target)) return;
+                            const list = resultList(); if(!list.length) return;
+                            if(e.key==='ArrowDown'){
+                                e.preventDefault(); const cur=currentResultIndex(); focusResultAt(cur<0?0:cur+1);
+                            } else if(e.key==='ArrowUp'){
+                                e.preventDefault(); const cur=currentResultIndex(); focusResultAt(cur<=0?0:cur-1);
+                            } else if(e.key==='Enter' || e.key===' '){
+                                const cur=currentResultIndex(); if(cur>=0){ e.preventDefault(); const det=resultList()[cur]; det.open = !det.open; }
+                            } else if(e.key.toLowerCase && e.key.toLowerCase()==='e'){
+                                e.preventDefault(); setAll(true);
+                            } else if(e.key.toLowerCase && e.key.toLowerCase()==='c'){
+                                e.preventDefault(); setAll(false);
+                            }
+                        });
             </script>
         </body></html>""")
 
