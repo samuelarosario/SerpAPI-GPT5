@@ -622,65 +622,29 @@ class EnhancedFlightSearchClient:
             from Main.core.db_utils import open_connection as _open_conn
             with _open_conn(self.db_path) as conn:
                 cur = conn.cursor()
-                # --- Helpers: normalize codes and upsert airports with last_seen ---
-                def _canon(code: Any) -> str | None:
-                    if not code:
-                        return None
-                    s = str(code).strip()
-                    return s.upper() if s else None
+                # --- Minimal reference data upserts (airports & airlines) ---
+                dep_code = (search_params.get('departure_id') or '').upper()
+                arr_code = (search_params.get('arrival_id') or '').upper()
+                if dep_code:
+                    cur.execute("INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)", (dep_code, dep_code))
+                if arr_code:
+                    cur.execute("INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)", (arr_code, arr_code))
 
-                def _upsert_airport(code: Any, name: str | None = None) -> None:
-                    c = _canon(code)
-                    if not c:
-                        return
-                    disp_name = (name or c).strip() if isinstance(name, str) and name.strip() else c
-                    cur.execute(
-                        """
-                        INSERT INTO airports(airport_code, airport_name, last_seen)
-                        VALUES (?, ?, CURRENT_TIMESTAMP)
-                        ON CONFLICT(airport_code) DO UPDATE SET
-                            last_seen=excluded.last_seen,
-                            airport_name=CASE
-                                WHEN airports.airport_name IS NULL OR airports.airport_name = airports.airport_code THEN excluded.airport_name
-                                ELSE airports.airport_name
-                            END
-                        """,
-                        (c, disp_name)
-                    )
-
-                # Normalize primary search codes
-                dep_code = _canon(search_params.get('departure_id')) or ''
-                arr_code = _canon(search_params.get('arrival_id')) or ''
-
-                # Collect airline & airport codes and names from segments for FK safety and enrichment
+                # Collect airline & airport codes from segments for FK safety
                 seg_airlines: set[str] = set()
-                seg_airports: set[str] = set([code for code in (dep_code, arr_code) if code])
-                airport_names: dict[str, str] = {}
+                seg_airports: set[str] = set([dep_code, arr_code])
                 for group in (api_response.get('best_flights', []), api_response.get('other_flights', [])):
                     for flight in group:
                         for seg in flight.get('flights', []):
-                            dep_obj = (seg.get('departure_airport', {}) or {})
-                            arr_obj = (seg.get('arrival_airport', {}) or {})
-                            dep_id = _canon(dep_obj.get('id'))
-                            arr_id = _canon(arr_obj.get('id'))
-                            if dep_id:
-                                seg_airports.add(dep_id)
-                                dep_name = dep_obj.get('name')
-                                if isinstance(dep_name, str) and dep_name.strip():
-                                    airport_names.setdefault(dep_id, dep_name.strip())
-                            if arr_id:
-                                seg_airports.add(arr_id)
-                                arr_name = arr_obj.get('name')
-                                if isinstance(arr_name, str) and arr_name.strip():
-                                    airport_names.setdefault(arr_id, arr_name.strip())
+                            dep = (seg.get('departure_airport', {}) or {}).get('id')
+                            arr = (seg.get('arrival_airport', {}) or {}).get('id')
+                            if dep: seg_airports.add(dep.upper())
+                            if arr: seg_airports.add(arr.upper())
                             al = seg.get('airline')
-                            if al:
-                                seg_airlines.add(al.upper())
-
-                # Upsert all known airports using any discovered names
+                            if al: seg_airlines.add(al.upper())
                 for ac in seg_airports:
-                    _upsert_airport(ac, airport_names.get(ac))
-                # Upsert airlines (minimal)
+                    if ac:
+                        cur.execute("INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)", (ac, ac))
                 for al in seg_airlines:
                     cur.execute("INSERT OR IGNORE INTO airlines(airline_code, airline_name) VALUES (?, ?)", (al, al))
 
@@ -702,8 +666,8 @@ class EnhancedFlightSearchClient:
                     (
                         search_id,
                         datetime.now().isoformat(),
-                        dep_code,
-                        arr_code,
+                        search_params.get('departure_id'),
+                        search_params.get('arrival_id'),
                         search_params.get('outbound_date'),
                         search_params.get('return_date'),
                         1 if search_params.get('return_date') else 2,
@@ -768,12 +732,10 @@ class EnhancedFlightSearchClient:
                             for order, seg in enumerate(flight.get('flights', []), 1):
                                 dep = seg.get('departure_airport', {})
                                 arr = seg.get('arrival_airport', {})
-                                dep_code_u = _canon(dep.get('id'))
-                                arr_code_u = _canon(arr.get('id'))
                                 segment_rows.append((
                                     fid, order,
-                                    dep_code_u, dep.get('time'),
-                                    arr_code_u, arr.get('time'),
+                                    dep.get('id'), dep.get('time'),
+                                    arr.get('id'), arr.get('time'),
                                     seg.get('duration'), seg.get('airplane'),
                                     seg.get('airline'), seg.get('flight_number'),
                                     seg.get('travel_class'), seg.get('legroom'),
@@ -784,7 +746,7 @@ class EnhancedFlightSearchClient:
                             for order, lay in enumerate(flight.get('layovers', []), 1):
                                 layover_rows.append((
                                     fid, order,
-                                    _canon(lay.get('id')), lay.get('duration'), lay.get('overnight', False), now_iso
+                                    lay.get('id'), lay.get('duration'), lay.get('overnight', False), now_iso
                                 ))
                     if segment_rows:
                         # Ensure any additional airports/airlines discovered are upserted
@@ -794,9 +756,9 @@ class EnhancedFlightSearchClient:
                                 # indexes: flight_result_id, segment_order, dep_code(2), dep_time(3), arr_code(4), arr_time(5)... airline_code at index 8
                                 dep_code_seg = seg[2]; arr_code_seg = seg[4]; airline_code_seg = seg[8]
                                 if dep_code_seg:
-                                    _upsert_airport(dep_code_seg, airport_names.get(dep_code_seg))
+                                    cur.execute("INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)", (dep_code_seg, dep_code_seg))
                                 if arr_code_seg:
-                                    _upsert_airport(arr_code_seg, airport_names.get(arr_code_seg))
+                                    cur.execute("INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)", (arr_code_seg, arr_code_seg))
                                 if airline_code_seg:
                                     cur.execute("INSERT OR IGNORE INTO airlines(airline_code, airline_name) VALUES (?, ?)", (airline_code_seg, airline_code_seg))
                         except Exception:
