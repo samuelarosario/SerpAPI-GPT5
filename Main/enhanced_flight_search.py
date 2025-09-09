@@ -645,15 +645,31 @@ class EnhancedFlightSearchClient:
                     self.logger.warning("Skipping structured storage: missing airports for search dep=%s arr=%s", dep_code, arr_code)
                     return
 
-                # Collect airline codes (IATA/ICAO) from segments; do not touch airports
+                # Collect airline codes from segments; do not touch airports
                 def _canon_airline(code: Any) -> str:
                     s = str(code).strip().upper() if code else ''
                     return s if (2 <= len(s) <= 3 and s.isalnum()) else ''
+
+                def _derive_airline_from_flight_number(seg: dict[str, Any]) -> str:
+                    """Derive 2-char airline code from flight_number like 'AA 3489'.
+                    Takes the token before the first space, filters to A-Z0-9, and returns first 2 chars.
+                    """
+                    fn = seg.get('flight_number')
+                    if not fn:
+                        return ''
+                    head = str(fn).strip().split(' ')[0].upper()
+                    head = ''.join(ch for ch in head if ch.isalnum())
+                    return head[:2] if len(head) >= 2 else ''
                 airlines: dict[str, str] = {}
                 for group in (api_response.get('best_flights', []), api_response.get('other_flights', [])):
                     for flight in group:
                         for seg in flight.get('flights', []):
-                            code = _canon_airline(seg.get('airline_code') or seg.get('airline'))
+                            # Prefer code derived from flight_number (e.g., 'AA 3489' -> 'AA')
+                            code = _canon_airline(_derive_airline_from_flight_number(seg))
+                            if not code:
+                                code = _canon_airline(seg.get('airline_code'))
+                            if not code:
+                                code = _canon_airline(seg.get('airline'))
                             name = (seg.get('airline') or code or '').strip()
                             if code:
                                 airlines[code] = name
@@ -775,13 +791,16 @@ class EnhancedFlightSearchClient:
                                 # Only include segments when both airports exist
                                 if not (_airport_exists(dep_code_seg) and _airport_exists(arr_code_seg)):
                                     continue
-                                al_code = _canon_airline(seg.get('airline_code') or seg.get('airline'))
-                                # If missing/invalid, derive from airline name or use 'ZZ' fallback to keep segment (FK-safe)
+                                # Prefer deriving from flight_number like 'AA 3489' -> 'AA'
+                                al_code = _canon_airline(_derive_airline_from_flight_number(seg))
+                                if not al_code:
+                                    al_code = _canon_airline(seg.get('airline_code'))
+                                # If still missing/invalid, derive from airline name; final fallback 'ZZ' to keep row FK-safe
                                 if not al_code:
                                     name_raw = (seg.get('airline') or '').upper()
                                     derived = ''.join(ch for ch in name_raw if ch.isalnum())[:3]
                                     if len(derived) >= 2:
-                                        al_code = derived[:3]
+                                        al_code = _canon_airline(derived)
                                     else:
                                         al_code = 'ZZ'
                                 # Ensure airline row exists for FK
