@@ -16,8 +16,12 @@ try {
     return
   }
   foreach ($procId in $pids) {
-    try { Stop-Process -Id $procId -Force -ErrorAction Stop; Write-Host "[stop-webapp] Stopped PID $procId" -ForegroundColor Green }
-    catch { Write-Warning "[stop-webapp] Failed to stop PID $procId: ${_}" }
+    try {
+      Stop-Process -Id $procId -Force -ErrorAction Stop
+      Write-Host "[stop-webapp] Stopped PID $procId" -ForegroundColor Green
+    } catch {
+      Write-Warning ("[stop-webapp] Failed to stop PID {0}: {1}" -f $procId, ($_.Exception.Message))
+    }
   }
 } finally {
   Pop-Location
