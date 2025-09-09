@@ -26,7 +26,6 @@ Completed:
 - Cache key index ensures deterministic, performant lookups.
 
 Remaining:
-- Formal `schema_version` table (migration currently implicit / code-based check only).
 - Optional raw compression (gzip) not yet implemented.
 
 ## 4. Performance & Scalability
@@ -76,7 +75,7 @@ Potential Enhancements:
 | Area | Risk | Mitigation Status | Priority |
 |------|------|-------------------|----------|
 | Observability export | Metrics ephemeral | Add /metrics endpoint or exporter | P2 |
-| Schema evolution | No version manifest | Add schema_version table & migration ledger | P1 |
+| Schema evolution | Manifest present | Maintain migration ledger discipline | P2 |
 | Retry test coverage | Unverified multi-attempt paths | Add mock failing session tests | P1 |
 | Log volume growth | JSONL unbounded | Optional rotation/compression task | P2 |
 | Raw size growth | Uncompressed JSON | Optional gzip storage toggle | P3 |
@@ -96,18 +95,17 @@ Potential Enhancements:
 | Foreign key enforcement | DONE | Centralized `open_connection()` |
 | Week range aggregation | DONE | Search lifecycle events instrumented |
 | Metrics test | DONE | `tests/test_metrics.py` |
-| Schema version tracking | PENDING | To implement table + recorded migrations |
+| Schema version tracking | DONE | Table present, baseline recorded, tests in place |
 | Retry path unit tests | PENDING | Add forced transient error test |
 | Persistent metrics export | PENDING | Prometheus / OTLP gateway |
 | Gzip raw response storage | PENDING | Optional size reduction |
 | Structured logs ingestion guide | PENDING | Add usage examples |
 
 ## 11. Immediate Next Actions (Suggested)
-1. Implement `schema_version` table (id INTEGER PK, version TEXT, applied_at UTC) + register current baseline.
-2. Add retry failure simulation test (monkeypatch `requests.Session.get` for first N calls).
-3. Provide README section: consuming `flight_events.jsonl` with jq & filtering by search_id.
-4. Add optional gzip flag for raw storage (store alongside `raw_response_compressed` or reuse column with marker).
-5. Expose `/metrics` (simple Flask or FastAPI optional micro-endpoint) when promoting to multi-process environment.
+1. Add retry failure simulation test (monkeypatch `requests.Session.get` for first N calls).
+2. Provide README section: consuming `flight_events.jsonl` with jq & filtering by search_id.
+3. Add optional gzip flag for raw storage (store alongside `raw_response_compressed` or reuse column with marker).
+4. Expose `/metrics` (simple FastAPI optional micro-endpoint) when promoting to multi-process environment.
 
 ## 12. Conclusion
 System satisfies all originally scoped functional requirements and now includes first-tier observability. Remaining gaps are incremental, non-blocking for production pilot. Focus next on schema version manifest and retry path test to solidify upgrade and failure transparency.

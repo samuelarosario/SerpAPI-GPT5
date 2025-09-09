@@ -216,7 +216,7 @@ flowchart TD
 
 The database now implements baseline version manifest + migration history with checksum:
 
-- `schema_version` (single-row) holds current baseline: `2025.09.08-baseline`.
+- `schema_version` (single-row) holds current baseline: `2025.09.08-baseline` (present and tested).
 - `migration_history` stores (id, version, applied_at, description, checksum).
 - A SHA256 checksum of the live schema (tables + indexes) is backfilled for baseline and updated on future approved migrations.
 - Write-Ahead Logging (WAL) enabled by default for improved concurrent read performance (`PRAGMA journal_mode=WAL`).
@@ -224,7 +224,7 @@ The database now implements baseline version manifest + migration history with c
 - Integrity checks: `run_integrity_check()` wraps `PRAGMA quick_check` + `PRAGMA integrity_check`.
 - Snapshot regeneration: `generate_schema_snapshot()` produces/refreshes `DB/current_schema.sql` and auto-updates baseline checksum if empty.
 
-Operational Policy:
+Operational Policy (enforced and covered by tests):
 1. Propose change (design + justification) → seek explicit owner approval.
 2. Implement migration script or inline migration guard.
 3. Regenerate snapshot via helper, verify checksum stored.
@@ -369,30 +369,9 @@ else:
     print(f"Search failed: {result['error']}")
 ```
 
-### Approval Required Search
-```python
-from approved_flight_search import ApprovalRequiredFlightSearchClient
+### (Deprecated) Approval Workflow
 
-# Initialize approval client
-client = ApprovalRequiredFlightSearchClient()
-
-# Request search with approval
-result = client.search_flights_with_approval(
-    departure_id='POM',
-    arrival_id='MNL',
-    outbound_date='2025-09-26',
-    reason='Business travel planning'
-)
-
-if result.get('approval_required'):
-    request_id = result['approval_request_id']
-    print(f"Approval needed. Request ID: {request_id}")
-    print(f"Estimated cost: ${result['estimated_cost']:.4f}")
-    
-    # User approves the request
-    final_result = client.approve_and_execute(request_id)
-    print(f"Search completed: {final_result['success']}")
-```
+The interactive approval and usage monitoring subsystem was removed in September 2025. Use `EnhancedFlightSearchClient.search_flights()` (cache-first) or `search_week_range()` instead.
 
 ### Database Analytics
 ```python
@@ -457,13 +436,7 @@ classDiagram
         +_generate_cache_key()
     }
     
-    class APICallMonitor {
-        +calls_today: List
-        +cost_estimates: Dict
-        +log_api_call()
-        +request_approval()
-        +generate_usage_report()
-    }
+    %% Approval/cost monitoring subsystem removed in Sept 2025 consolidation
     
     class SerpAPIDatabase {
         +db_path: str
@@ -475,15 +448,13 @@ classDiagram
     
     EnhancedFlightSearchClient --> SerpAPIFlightClient
     EnhancedFlightSearchClient --> FlightSearchCache
-    ApprovalRequiredFlightSearchClient --> EnhancedFlightSearchClient
     FlightSearchCache --> SerpAPIDatabase
-    APICallMonitor --> SerpAPIDatabase
 ```
 
 ### Key Design Patterns
 
 1. **Cache-First Strategy**: Always check local database before API calls
-2. **Approval Workflow**: Mandatory approval for API calls to manage costs
+2. **Approval Workflow**: (Deprecated) Previously required; removed in favor of streamlined cache-first flow
 3. **Data Normalization**: Foreign key relationships to eliminate redundancy
 4. **IATA Code Extraction**: Regex-based extraction from flight numbers
 5. **Error Handling**: Comprehensive error capture and graceful degradation
@@ -508,6 +479,15 @@ classDiagram
 # Or create a .env file at project root (NOT committed) with:
 # SERPAPI_KEY=your_key
 # Plaintext standalone key files (e.g. Temp/api_key.txt) are deprecated and disallowed.
+```
+
+### Dependency & Environment Persistence (Windows)
+
+All runtime dependencies are pinned in `requirements.txt` (root), including WebApp packages (fastapi, uvicorn, SQLAlchemy, python-jose, passlib, argon2-cffi, pydantic, pydantic-settings, jinja2, requests). Use the bootstrap script to recreate the environment on fresh sessions:
+
+```powershell
+.\scripts\bootstrap.ps1            # setup venv + install deps
+.\scripts\bootstrap.ps1 -RunServer  # also start the WebApp on 127.0.0.1:8013
 ```
 
 ### Database Configuration

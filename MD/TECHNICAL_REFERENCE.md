@@ -169,6 +169,8 @@ Any historic references to: `request_api_approval`, `approve_and_execute`, `Appr
 
 ## 💾 Database Functions
 
+Note: Schema version manifest (`schema_version`) is present with baseline `2025.09.08-baseline` and verified by tests; unauthorized drift is detected via checksums and drift detection helpers.
+
 ## 🧾 Structured Event Taxonomy
 
 Event names follow dot-separated hierarchy: <domain>.<category>.<action>
