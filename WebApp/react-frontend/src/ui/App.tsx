@@ -145,12 +145,17 @@ export default function App() {
                               <div style={{width:8, height:8}}></div>
                             </div>
                             <div>
-                              <hr style={{border:'none', borderTop:'1px solid #e5e7eb', margin:'8px 0'}} />
-                              <div style={{display:'flex', justifyContent:'space-between'}}>
-                                <div style={small}>
-                                  {fmtDuration(Number(lay?.duration))} layover • {lay?.name || lay?.id || (arrName + ` (${arrCode})`)} {lay?.overnight ? '• Overnight' : ''}
+                              <div style={{background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                                <div style={{fontSize:13}}>
+                                  <span style={{fontWeight:700}}>{fmtDuration(Number(lay?.duration))} layover</span>
+                                  {` • ${lay?.name || lay?.id || (arrName + ' (' + arrCode + ')')}`}
                                 </div>
-                                <div></div>
+                                {lay?.overnight && (
+                                  <div style={{display:'flex', alignItems:'center', gap:6, color:'#B91C1C', fontWeight:700}} title="Overnight layover">
+                                    <span aria-hidden>⚠️</span>
+                                    <span>Overnight</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
