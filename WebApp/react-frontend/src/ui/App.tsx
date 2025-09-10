@@ -76,8 +76,12 @@ export default function App() {
   const [outbound, setOutbound] = useState<any[]>([]);
   const [inbound, setInbound] = useState<any[]>([]);
   const minRet = useMemo(() => date ? addDays(date, 1) : '', [date]);
+  // Outbound must be at least +1 day from today
+  const minOut = useMemo(() => tomorrow(), []);
 
   useEffect(() => { if(trip === 'oneway') setRet(''); }, [trip]);
+  // Auto-correct outbound date if user tries to set earlier than allowed
+  useEffect(() => { if(date && minOut && date < minOut) setDate(minOut); }, [date, minOut]);
   useEffect(() => { if(ret && date && ret <= date) setRet(''); }, [date, ret]);
   useEffect(() => {
     (async () => {
@@ -254,7 +258,7 @@ export default function App() {
       <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
         <input placeholder="Origin (IATA)" value={origin} onChange={e=>setOrigin(e.target.value.toUpperCase())} maxLength={3} style={{width:140}} />
         <input placeholder="Destination (IATA)" value={dest} onChange={e=>setDest(e.target.value.toUpperCase())} maxLength={3} style={{width:160}} />
-        <input type="date" value={date} onChange={e=>setDate(e.target.value)} />
+  <input type="date" value={date} onChange={e=>setDate(e.target.value)} min={minOut} />
         <input type="date" value={ret} onChange={e=>setRet(e.target.value)} min={minRet} disabled={trip==='oneway'} />
         <select value={trip} onChange={e=>setTrip(e.target.value as any)}>
           <option value="round">2-way</option>
