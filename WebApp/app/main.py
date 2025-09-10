@@ -149,6 +149,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         <input id='destination' placeholder='Destination: code, city, or name' maxlength='32' list='destList' required />
                         <input id='date' type='date' required />
                         <input id='return_date' type='date' placeholder='Return (optional)' />
+                        <select id='travel_class' title='Travel class'>
+                            <option value='1' selected>Economy</option>
+                            <option value='2'>Premium</option>
+                            <option value='3'>Business</option>
+                            <option value='4'>First</option>
+                        </select>
                         <button type='submit'>Search</button>
                     </form>
                     <datalist id='originList'></datalist>
@@ -191,6 +197,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const destinationInput=document.getElementById('destination');
                 const dateInput=document.getElementById('date');
                 const returnDateInput=document.getElementById('return_date');
+                const classSelect=document.getElementById('travel_class');
                 const sortSel=document.getElementById('sort');
             const countEl=document.getElementById('count');
             const expandAllBtn=document.getElementById('expandAll');
@@ -429,14 +436,15 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 if(tabOut){ tabOut.onclick=()=>{ currentView='outbound'; tabOut.classList.add('active'); if(tabIn) tabIn.classList.remove('active'); page=1; render(); }; }
                 if(tabIn){ tabIn.onclick=()=>{ currentView='inbound'; tabIn.classList.add('active'); if(tabOut) tabOut.classList.remove('active'); page=1; render(); }; }
 
-                async function runSearch(o,d,dt,ret){
+                async function runSearch(o,d,dt,ret,tclass){
                     statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
                     CURRENT_DT = dt || '';
                     CURRENT_RET_DT = ret || '';
                     CURRENT_ORIG = (o||'').toUpperCase();
                     CURRENT_DEST = (d||'').toUpperCase();
-                    let url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
+                    const tc = (tclass && Number(tclass)) ? Number(tclass) : (Number(classSelect?.value)||1);
+                    let url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}&travel_class=${tc}`;
                     if(ret){ url += `&return_date=${encodeURIComponent(ret)}`; }
                     const r=await authFetch(url);
                     if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
@@ -447,7 +455,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     // Extract search parameters when available to show class and trip mode
                     const SP = (data && data.data && data.data.search_parameters) ? data.data.search_parameters : {};
                     const CLASS_MAP = {1:'Economy', 2:'Premium', 3:'Business', 4:'First'};
-                    const classLabel = CLASS_MAP[Number(SP.travel_class)] || '';
+                    const classLabel = CLASS_MAP[Number(SP.travel_class || (classSelect?.value||1))] || '';
                     const isRoundTrip = !!SP.return_date || !!CURRENT_RET_DT;
                     const usedReturnDate = SP.return_date || CURRENT_RET_DT || '';
                     if(!flights.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
@@ -500,8 +508,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const d=(destinationInput.value||'').trim().toUpperCase();
                     const dt=dateInput.value;
                     const ret=(returnDateInput.value||'').trim();
+                    const tclass=(classSelect?.value)||'1';
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
-                    runSearch(o,d,dt,ret||undefined);
+                    runSearch(o,d,dt,ret||undefined,tclass);
                 });
 
                         // Per-result toggle button (inside each item)
@@ -537,11 +546,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
 async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5, description="Origin IATA"),
                             destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
                             date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD"),
-                            return_date: str | None = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$", description="Return date YYYY-MM-DD (optional)")):
+                            return_date: str | None = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$", description="Return date YYYY-MM-DD (optional)"),
+                            travel_class: int = Query(1, ge=1, le=4, description="Travel class (1=Economy,2=Premium,3=Business,4=First)")):
     # Minimal wrapper: only uses origin/destination/date; relies on existing EFS caching logic.
     client = _get_efs_client()
     def run_search():
-        kwargs = dict(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
+        kwargs = dict(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date, travel_class=int(travel_class))
         if return_date:
             kwargs['return_date'] = return_date
         return client.search_flights(**kwargs)
