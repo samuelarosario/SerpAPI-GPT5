@@ -1,3 +1,7 @@
+## 2025-09-10
+- WebApp Flight Search UI now includes Return date and Outbound/Inbound tabs. Reflects in `WebApp/app/main.py` and `WebApp/README.md`.
+- CHANGELOG updated with UI, backend airport auto-extract, and inbound fallback merge.
+- SYSTEM_STATUS regenerated metadata and added a Web UI section for clarity.
 # Documentation Drift Matrix
 
 Purpose: Track discrepancies between documentation claims and actual codebase components (2025-09-08 audit).

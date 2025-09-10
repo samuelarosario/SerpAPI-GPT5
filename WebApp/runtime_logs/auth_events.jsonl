@@ -106,3 +106,11 @@
 {"ts": "2025-09-09T20:34:17.221328+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
 {"ts": "2025-09-10T00:19:32.664618+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
 {"ts": "2025-09-10T00:19:32.721691+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-10T00:49:16.340561+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
+{"ts": "2025-09-10T00:49:16.488106+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-10T02:12:49.950066+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
+{"ts": "2025-09-10T02:12:50.081179+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-10T02:53:13.306275+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
+{"ts": "2025-09-10T02:53:13.362722+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}
+{"ts": "2025-09-10T03:02:02.853394+00:00", "event": "login_attempt", "email": "user@local", "success": null, "detail": null}
+{"ts": "2025-09-10T03:02:02.909757+00:00", "event": "login_success", "email": "user@local", "success": true, "detail": null}

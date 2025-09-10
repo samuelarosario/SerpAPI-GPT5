@@ -108,3 +108,5 @@ Status legend: [ ] Planned | [~] In Progress | [x] Done (leave item & add date w
 
 ---
 Generated backlog (deferred at user request). Update this file as items begin or complete.
+
+- [ ] Flight Search UI: Optional "All" tab combining outbound+inbound, or stacked split view.

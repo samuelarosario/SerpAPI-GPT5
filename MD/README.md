@@ -47,8 +47,8 @@ Use the bootstrap script to create a local venv and install all dependencies (ro
 
 ```powershell
 # From repo root
-.\scriptsootstrap.ps1            # create .venv and install deps
-.\scriptsootstrap.ps1 -RunServer  # also start the WebApp on http://127.0.0.1:8013
+.\scripts\bootstrap.ps1            # create .venv and install deps
+.\scripts\bootstrap.ps1 -RunServer  # also start the WebApp on http://127.0.0.1:8013
 ```
 
 Alternatively, manual setup:
@@ -188,6 +188,17 @@ efs = EnhancedFlightSearchClient()
 res = efs.search_flights('LAX','JFK','2025-09-15','2025-09-22')
 if res.get('success'):
     print('Flights:', len(res.get('data', {}).get('best_flights', [])))
+```
+
+## 🌐 WebApp Flight Search UI (Overview)
+- Authenticated at `/flight-search`.
+- Form fields: Origin, Destination, Outbound date, optional Return date.
+- Results are split into Outbound and Inbound tabs with counts; sorting and pagination are applied per tab.
+- Headline displays the route, outbound and return dates (when provided), travel class, and trip mode (1-way / 2-way).
+
+Backend behavior highlights:
+- Airport auto-extract during structured storage ensures all segments and layovers persist even if some airports weren’t pre-seeded.
+- Inbound fallback: if a round-trip response lacks inbound legs, a one‑way inbound fetch is performed and merged before storing, preventing missing return segments.
 ```
 
 ### 3. Data Processor (`flight_processor.py`)

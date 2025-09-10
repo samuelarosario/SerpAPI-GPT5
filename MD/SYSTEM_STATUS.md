@@ -1,8 +1,8 @@
 # System Status Report
 ## SerpAPI Flight Data Collection System
 
-**Generated:** 2025-09-08  
-**Status:** ✅ OPERATIONAL (Post-migration + Observability P1)
+**Generated:** 2025-09-10  
+**Status:** ✅ OPERATIONAL (Web UI tabs + return segment reliability)
 
 ---
 
@@ -130,6 +130,11 @@
 ### Analysis & Observability
 Legacy broad analysis module removed; emphasis remains: reliable capture + cache-first retrieval. Route & price insights preserved.
 Structured JSON event stream (`logs/flight_events.jsonl`) records lifecycle events (efs.search.*, api.*, cache hits/misses, week range progress) with UTC timestamps.
+
+### Web UI (Flight Search)
+- UI now supports optional Return date input and splits results into Outbound and Inbound tabs with counts.
+- Headline shows route on multiple lines with dates, travel class, and trip mode (1-way/2-way).
+- Backend storage auto-extracts minimal airport stubs and merges inbound one-way results if a round-trip response omits inbound legs.
 
 ---
 

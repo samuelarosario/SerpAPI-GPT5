@@ -399,6 +399,22 @@ flowchart LR
 ### 2. (Removed) Approval Workflow Pattern
 Previously documented here. Eliminated in current architecture; cache-first path calls API directly when needed.
 
+---
+
+## 🌐 Web Application
+
+The web layer provides authentication (JWT) and a thin UI over the enhanced flight search engine. It delegates all business logic and storage to `EnhancedFlightSearchClient`.
+
+Flight Search UI specifics:
+- Inputs: origin, destination, outbound date, optional return date.
+- Results are split into Outbound and Inbound tabs (direction inferred from first departure and final arrival vs query origin/destination).
+- Sorting and pagination operate on the active tab.
+- The headline shows route (multi-line) with outbound and return dates, travel class, and trip mode (1-way/2-way).
+
+Backend specifics impacting UI correctness:
+- Airport auto-extract during structured storage upserts minimal airport rows for any airport codes found in segments or layovers, ensuring referential integrity and visibility of all legs.
+- Inbound fallback: if a round-trip API response contains no inbound legs for the requested return date, a one-way inbound search (arrival→departure) is executed and merged prior to storage, preventing missing return segments.
+
 ### 3. Database Transaction Pattern
 
 ```mermaid

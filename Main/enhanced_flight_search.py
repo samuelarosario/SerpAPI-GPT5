@@ -26,7 +26,7 @@ if __name__ == "__main__":  # pragma: no cover (runtime convenience only)
 import requests
 
 from Main.cache import FlightSearchCache
-from Main.config import RATE_LIMIT_CONFIG, SERPAPI_CONFIG, get_api_key
+from Main.config import RATE_LIMIT_CONFIG, SERPAPI_CONFIG, PROCESSING_CONFIG, get_api_key
 
 try:  # prefer real helper
     from DB.database_helper import SerpAPIDatabase  # type: ignore
@@ -242,6 +242,43 @@ class EnhancedFlightSearchClient:
             except Exception as raw_err:
                 self.logger.error(f"Failed to store raw API response: {raw_err}")
                 log_exception('efs.store.raw.error', search_id=search_id, exc=raw_err)
+
+            # If this was a round-trip request but the payload contains no return-leg segments,
+            # issue a one-way inbound request (arrival->departure on return_date) and merge results.
+            try:
+                def _has_inbound(d: dict[str, Any], dep: str, arr: str, ret_date: str) -> bool:
+                    if not isinstance(d, dict):
+                        return False
+                    flights = (d.get('best_flights') or []) + (d.get('other_flights') or [])
+                    for f in flights:
+                        for s in (f.get('flights') or []):
+                            da = (s.get('departure_airport') or {})
+                            aa = (s.get('arrival_airport') or {})
+                            did = str(da.get('id') or '').upper()
+                            aid = str(aa.get('id') or '').upper()
+                            dt = str(da.get('time') or '')
+                            at = str(aa.get('time') or '')
+                            if (did == arr and aid == dep) or (dt.startswith(ret_date) or at.startswith(ret_date)):
+                                return True
+                    return False
+                dep = str(search_params.get('departure_id', '')).upper()
+                arr = str(search_params.get('arrival_id', '')).upper()
+                ret = search_params.get('return_date')
+                if ret and not _has_inbound(api_data or {}, dep, arr, ret):
+                    self.logger.info("Round-trip response missing inbound; fetching inbound one-way %s->%s on %s", arr, dep, ret)
+                    try:
+                        inbound = self.api_client.search_one_way(departure_id=arr, arrival_id=dep, outbound_date=ret, adults=search_params.get('adults',1), children=search_params.get('children',0), infants_in_seat=search_params.get('infants_in_seat',0), infants_on_lap=search_params.get('infants_on_lap',0), travel_class=search_params.get('travel_class',1), currency=search_params.get('currency','USD'))
+                        if inbound and inbound.get('success') and isinstance(api_data, dict):
+                            in_data = inbound.get('data') or {}
+                            # Merge inbound flights into 'other_flights' to avoid disturbing best ranking
+                            api_data.setdefault('other_flights', [])
+                            api_data['other_flights'].extend(in_data.get('best_flights', []) or [])
+                            api_data['other_flights'].extend(in_data.get('other_flights', []) or [])
+                            self.logger.info("Merged inbound flights: +%d", len((in_data.get('best_flights') or [])) + len((in_data.get('other_flights') or [])))
+                    except Exception as _inb_err:  # pragma: no cover
+                        self.logger.warning("Inbound fallback search failed: %s", _inb_err)
+            except Exception as _merge_err:  # pragma: no cover
+                self.logger.warning("Inbound merge check failed: %s", _merge_err)
 
             # Structured storage (non-fatal)
             try:
@@ -627,8 +664,9 @@ class EnhancedFlightSearchClient:
             from Main.core.db_utils import open_connection as _open_conn
             with _open_conn(self.db_path) as conn:
                 cur = conn.cursor()
-                # --- Airports are managed manually: do not write to airports table ---
-                # Validate presence of required airport codes; if missing, skip storage to respect FKs
+                # --- Airports policy: curated by default, but allow auto-extract if enabled ---
+                auto_airports = bool(PROCESSING_CONFIG.get('auto_extract_airports', False))
+                # Validate presence of required airport codes; if missing, optionally upsert minimal stubs
                 def _canon(code: Any) -> str:
                     return str(code).strip().upper() if code else ''
 
@@ -639,10 +677,34 @@ class EnhancedFlightSearchClient:
                     cur.execute("SELECT 1 FROM airports WHERE airport_code = ? LIMIT 1", (c,))
                     return cur.fetchone() is not None
 
+                def _ensure_airport(code: Any):
+                    c = _canon(code)
+                    if not c:
+                        return False
+                    if _airport_exists(c):
+                        return True
+                    if not auto_airports:
+                        return False
+                    # Minimal stub: use code as name; other fields NULL
+                    try:
+                        cur.execute(
+                            "INSERT OR IGNORE INTO airports(airport_code, airport_name) VALUES (?, ?)",
+                            (c, c)
+                        )
+                        return True
+                    except Exception:
+                        return False
+
                 dep_code = _canon(search_params.get('departure_id'))
                 arr_code = _canon(search_params.get('arrival_id'))
-                if not dep_code or not arr_code or not (_airport_exists(dep_code) and _airport_exists(arr_code)):
-                    self.logger.warning("Skipping structured storage: missing airports for search dep=%s arr=%s", dep_code, arr_code)
+                # Ensure endpoints exist (upsert if allowed), otherwise skip
+                dep_ok = _ensure_airport(dep_code)
+                arr_ok = _ensure_airport(arr_code)
+                if not (dep_code and arr_code and dep_ok and arr_ok):
+                    self.logger.warning(
+                        "Skipping structured storage: missing airports for search dep=%s arr=%s (auto_extract=%s)",
+                        dep_code, arr_code, auto_airports
+                    )
                     return
 
                 # Collect airline codes from segments; do not touch airports
@@ -788,8 +850,8 @@ class EnhancedFlightSearchClient:
                                 arr = seg.get('arrival_airport', {})
                                 dep_code_seg = _canon(dep.get('id'))
                                 arr_code_seg = _canon(arr.get('id'))
-                                # Only include segments when both airports exist
-                                if not (_airport_exists(dep_code_seg) and _airport_exists(arr_code_seg)):
+                                # Ensure segment endpoints exist (optionally upsert)
+                                if not (_ensure_airport(dep_code_seg) and _ensure_airport(arr_code_seg)):
                                     continue
                                 # Prefer deriving from flight_number like 'AA 3489' -> 'AA'
                                 al_code = _canon_airline(_derive_airline_from_flight_number(seg))
@@ -821,7 +883,7 @@ class EnhancedFlightSearchClient:
                                 ))
                             for order, lay in enumerate(flight.get('layovers', []), 1):
                                 lay_code = _canon(lay.get('id'))
-                                if not _airport_exists(lay_code):
+                                if not _ensure_airport(lay_code):
                                     continue
                                 layover_rows.append((
                                     fid, order,

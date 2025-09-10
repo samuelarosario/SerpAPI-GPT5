@@ -8,7 +8,7 @@ This directory will contain the upcoming web application layer for the flight da
 - Integrate later with existing flight search core modules.
 
 ## Current Status
-Running: Auth, user bootstrap, JWT-based /auth endpoints, and a minimal UI with a working `/api/flight_search` proxy into the EnhancedFlightSearch client.
+Running: Auth, user bootstrap, JWT-based /auth endpoints, and a Flight Search UI with a working `/api/flight_search` proxy into the EnhancedFlightSearch client. UI supports optional Return date and separates results via Outbound/Inbound tabs with independent sorting & pagination per tab.
 
 ## Planned Stack (Subject to refinement)
 - Framework: FastAPI (async, modern, OpenAPI generation).

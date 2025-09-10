@@ -95,10 +95,13 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 .nav a{color:#5f6368;text-decoration:none;font-size:.9rem;margin-left:12px}
                 main{max-width:980px;margin:0 auto;padding:8px 16px}
                 .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
-            .headline{color:var(--accent);font-size:1.35rem;font-weight:700;margin:.8rem 0;text-align:center}
+            .headline{color:var(--accent);font-size:1.35rem;font-weight:700;margin:.8rem 0;text-align:left}
             .filters{display:flex;gap:10px;align-items:center;margin:.5rem 0 1rem 0;border-bottom:1px solid #eceff3;padding-bottom:.6rem}
                 .filters select{border:1px solid #dadce0;border-radius:8px;padding:.35rem .5rem}
             .filters .btn{border:1px solid #dadce0;background:#fff;border-radius:6px;padding:.35rem .6rem;cursor:pointer;font-size:.85rem}
+            .tabs{display:flex;gap:8px;border-bottom:1px solid #eceff3;margin:.25rem 0 1rem 0}
+            .tab{border:1px solid #dadce0;background:#fff;border-radius:6px 6px 0 0;padding:.35rem .7rem;cursor:pointer;font-size:.85rem}
+            .tab.active{background:#e8f0fe;border-bottom-color:#e8f0fe;color:#174ea6}
             details.result{padding:10px 0;border-bottom:1px solid #f1f3f4}
             details.result > summary{list-style:none;display:flex;align-items:flex-start;justify-content:space-between;gap:16px;cursor:pointer}
             details.result > summary::-webkit-details-marker{display:none}
@@ -145,6 +148,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         <input id='origin_code' placeholder='Origin: code, city, or name' maxlength='32' list='originList' required />
                         <input id='destination' placeholder='Destination: code, city, or name' maxlength='32' list='destList' required />
                         <input id='date' type='date' required />
+                        <input id='return_date' type='date' placeholder='Return (optional)' />
                         <button type='submit'>Search</button>
                     </form>
                     <datalist id='originList'></datalist>
@@ -167,6 +171,10 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 <div style='flex:1'></div>
             <div id='count' class='meta'></div>
                 </div>
+                <div class='tabs'>
+                    <button id='tabOutbound' class='tab active'>Outbound</button>
+                    <button id='tabInbound' class='tab'>Inbound</button>
+                </div>
                 <div id='results'></div>
                 <div class='pagination' id='pager' style='display:none'>
                     <button id='prevBtn' disabled>Previous</button>
@@ -182,6 +190,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const originInput=document.getElementById('origin_code');
                 const destinationInput=document.getElementById('destination');
                 const dateInput=document.getElementById('date');
+                const returnDateInput=document.getElementById('return_date');
                 const sortSel=document.getElementById('sort');
             const countEl=document.getElementById('count');
             const expandAllBtn=document.getElementById('expandAll');
@@ -190,8 +199,10 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const prevBtn=document.getElementById('prevBtn');
                 const nextBtn=document.getElementById('nextBtn');
                 const pageInfo=document.getElementById('pageInfo');
+                const tabOut=document.getElementById('tabOutbound');
+                const tabIn=document.getElementById('tabInbound');
 
-                const PAGE_SIZE=10; let ALL=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT='';
+                const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 dateInput.value=today();
 
@@ -290,8 +301,29 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                             depTS: first.departure_time||'',
                             arrTS: last.arrival_time||'',
                             layovers: Array.isArray(f.layovers) ? f.layovers : [],
+                            firstDep: (first?.departure_airport?.id||'').toUpperCase(),
+                            lastArr: (last?.arrival_airport?.id||'').toUpperCase(),
                         };
                     });
+                }
+                function directionOf(x){
+                    const a=(x.firstDep||'').toUpperCase();
+                    const b=(x.lastArr||'').toUpperCase();
+                    if(a && b){
+                        if(a===CURRENT_ORIG && b===CURRENT_DEST) return 'outbound';
+                        if(a===CURRENT_DEST && b===CURRENT_ORIG) return 'inbound';
+                    }
+                    return 'other';
+                }
+                function recomputeBuckets(){
+                    OUT = []; IN = [];
+                    for(const x of ALL){
+                        const dir = directionOf(x);
+                        if(dir==='outbound') OUT.push(x);
+                        else if(dir==='inbound') IN.push(x);
+                    }
+                    if(tabOut) tabOut.textContent = `Outbound (${OUT.length})`;
+                    if(tabIn) tabIn.textContent = `Inbound (${IN.length})`;
                 }
                 function applySort(list){
                     const mode=sortSel.value;
@@ -302,11 +334,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     return arr;
                 }
                 function render(){
-                    const sorted=applySort(ALL);
+                    const baseList = currentView==='inbound' ? IN : OUT;
+                    const sorted=applySort(baseList);
                     const total=sorted.length; const totalPages=Math.max(1, Math.ceil(total/PAGE_SIZE));
                     page=Math.min(Math.max(1,page), totalPages);
                     const start=(page-1)*PAGE_SIZE; const slice=sorted.slice(start, start+PAGE_SIZE);
-                                countEl.textContent = total ? `About ${total} results — Source: ${META.source}` : '';
+                                countEl.textContent = total ? `About ${total} ${currentView} results — Source: ${META.source}` : '';
                     pager.style.display = total>PAGE_SIZE ? 'flex' : 'none';
                     prevBtn.disabled = page<=1; nextBtn.disabled = page>=totalPages; pageInfo.textContent = `Page ${page} of ${totalPages}`;
                                 resEl.innerHTML = slice.map((x,idx)=>{
@@ -393,18 +426,30 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 prevBtn.onclick=()=>{ page=Math.max(1,page-1); render(); }
                 nextBtn.onclick=()=>{ page=page+1; render(); }
                 sortSel.onchange=()=>{ page=1; render(); }
+                if(tabOut){ tabOut.onclick=()=>{ currentView='outbound'; tabOut.classList.add('active'); if(tabIn) tabIn.classList.remove('active'); page=1; render(); }; }
+                if(tabIn){ tabIn.onclick=()=>{ currentView='inbound'; tabIn.classList.add('active'); if(tabOut) tabOut.classList.remove('active'); page=1; render(); }; }
 
-                async function runSearch(o,d,dt){
+                async function runSearch(o,d,dt,ret){
                     statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
                     CURRENT_DT = dt || '';
-                    const url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
+                    CURRENT_RET_DT = ret || '';
+                    CURRENT_ORIG = (o||'').toUpperCase();
+                    CURRENT_DEST = (d||'').toUpperCase();
+                    let url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}`;
+                    if(ret){ url += `&return_date=${encodeURIComponent(ret)}`; }
                     const r=await authFetch(url);
                     if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
                     const data=await r.json();
                     if(!data.success){ statusEl.innerHTML='<span class="error">No results: '+(data.error||'unknown')+'</span>'; return; }
                     const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
                     META.source = data.source || '';
+                    // Extract search parameters when available to show class and trip mode
+                    const SP = (data && data.data && data.data.search_parameters) ? data.data.search_parameters : {};
+                    const CLASS_MAP = {1:'Economy', 2:'Premium', 3:'Business', 4:'First'};
+                    const classLabel = CLASS_MAP[Number(SP.travel_class)] || '';
+                    const isRoundTrip = !!SP.return_date || !!CURRENT_RET_DT;
+                    const usedReturnDate = SP.return_date || CURRENT_RET_DT || '';
                     if(!flights.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
                     // Build list of unique airport codes and fetch airport details in batch
                     const setCodes = new Set([o.toUpperCase(), d.toUpperCase()]);
@@ -436,8 +481,16 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const oLabel = `${(ao?.city||ao?.name||o)} (${o})`;
                     const dLabel = `${(ad?.city||ad?.name||d)} (${d})`;
                     statusEl.className='headline';
-                    statusEl.textContent = `${oLabel} to ${dLabel} on ${dt}`;
+                    const modeStr = isRoundTrip ? '2-way' : '1-way';
+                    const suffix = [classLabel, modeStr].filter(Boolean).join(' • ');
+                    // Break into multiple lines: route, dates, details
+                    const datesLine = usedReturnDate ? `on ${dt} • return ${usedReturnDate}` : `on ${dt}`;
+                    statusEl.innerHTML = `<div>${oLabel} to ${dLabel}</div><div>${datesLine}</div>${suffix?`<div>${suffix}</div>`:''}`;
                     ALL = normalize(flights);
+                    recomputeBuckets();
+                    // default to outbound tab if it has items; otherwise show inbound
+                    if(OUT.length>0){ currentView='outbound'; if(tabOut){ tabOut.classList.add('active'); } if(tabIn){ tabIn.classList.remove('active'); } }
+                    else { currentView='inbound'; if(tabIn){ tabIn.classList.add('active'); } if(tabOut){ tabOut.classList.remove('active'); } }
                     page=1; render();
                 }
 
@@ -446,8 +499,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const o=(originInput.value||'').trim().toUpperCase();
                     const d=(destinationInput.value||'').trim().toUpperCase();
                     const dt=dateInput.value;
+                    const ret=(returnDateInput.value||'').trim();
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
-                    runSearch(o,d,dt);
+                    runSearch(o,d,dt,ret||undefined);
                 });
 
                         // Per-result toggle button (inside each item)
@@ -479,14 +533,18 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
             </script>
         </body></html>""")
 
-@app.get("/api/flight_search", response_class=JSONResponse, tags=["flight"])
+@app.get("/api/flight_search", response_class=JSONResponse, tags=["flight"]) 
 async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5, description="Origin IATA"),
                             destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
-                            date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD")):
+                            date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD"),
+                            return_date: str | None = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$", description="Return date YYYY-MM-DD (optional)")):
     # Minimal wrapper: only uses origin/destination/date; relies on existing EFS caching logic.
     client = _get_efs_client()
     def run_search():
-        return client.search_flights(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
+        kwargs = dict(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date)
+        if return_date:
+            kwargs['return_date'] = return_date
+        return client.search_flights(**kwargs)
     result = await run_in_threadpool(run_search)
     return JSONResponse(result)
 

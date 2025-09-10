@@ -1,5 +1,26 @@
 # Changelog
 
+## 2025-09-10
+### Web App Flight Search: Tabs, Return Date, Headline improvements
+- Added optional Return date field to the Flight Search UI and API passthrough.
+- Headline now shows route on separate lines with outbound and return dates, travel class, and trip mode (1-way/2-way), left-aligned for readability.
+- Introduced Outbound and Inbound tabs to separate results by direction; each tab shows its own count and supports sorting and pagination.
+
+### Backend Reliability: Airport auto-extract and Inbound fallback merge
+- Structured storage now auto-extracts minimal airport stubs (code/name/city when available) for any airports referenced by segments or layovers. This ensures all segments persist even if the airport wasn’t pre-seeded in the curated table.
+- Implemented inbound one‑way fallback: when the round-trip API response omits inbound legs for the specified return date, the system performs a one-way inbound search (arrival→departure) and merges those flights before structured storage. Prevents missing return segments going forward.
+- Cache behavior unchanged: structured results are preferred; raw fallback is used only when no structured segments exist at all.
+- No schema changes.
+
+### Scripts & Tooling
+- Added `scripts/seed_airlines.py` to seed airline reference data.
+- Added `scripts/smoke_store_return_segments.py` to validate segment persistence for previously unknown airports.
+- Added `scripts/backfill_inbound_segments.py` to repair historical searches where return segments were missing by merging inbound one‑way results and re-storing.
+
+### Operations
+- Server lifecycle controls tightened in dev (explicit port kill before start).
+- Backfilled SYD→HND (2026-01-01 / 2026-01-10) case; inbound legs are now present and dated correctly.
+
 ## 2025-09-08
 ### Web App Flight Search Integration & UI Refinements
 - Added authenticated web UI route `/flight-search` (form: origin, destination, date) and API endpoint `/api/flight_search` invoking `EnhancedFlightSearchClient` (cache-first then API) with minimal parameters.

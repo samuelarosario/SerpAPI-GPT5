@@ -1,3 +1,9 @@
+## WebApp Flight Search Enhancements (2025-09-10)
+- UI now supports an optional Return date field and shows a multi-line headline with route, dates, travel class, and trip mode (1-way/2-way).
+- Results are separated into Outbound and Inbound tabs with counts; sorting and pagination apply per tab.
+- Backend adds two reliability features:
+    - Airport auto-extract for segments/layovers to ensure complete structured persistence.
+    - Inbound fallback: performs a one-way inbound fetch and merge when round-trip responses omit inbound legs.
 # SerpAPI Flight Search System - Complete Documentation
 
 ## � IMPORTANT: Database Schema Modification Policy
