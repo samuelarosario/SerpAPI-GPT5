@@ -224,6 +224,21 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 function todayPlus(n){ const d=new Date(); d.setDate(d.getDate()+Number(n||0)); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 // Default to tomorrow to satisfy validation (min 1 day ahead)
                 if(!dateInput.value){ dateInput.value=todayPlus(1); }
+                // Enforce return date > outbound: set min to outbound+1 and clear invalid value
+                function dateToYmd(d){ const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
+                function addDaysYmd(ymd, n){ const d=ymdToDate(ymd); if(!d) return ''; d.setDate(d.getDate()+Number(n||0)); return dateToYmd(d); }
+                function syncReturnMin(){
+                    const out=dateInput.value;
+                    if(out){
+                        const min = addDaysYmd(out, 1);
+                        if(min){ returnDateInput.min = min; }
+                        if(returnDateInput.value && returnDateInput.value <= out){ returnDateInput.value=''; }
+                    } else {
+                        returnDateInput.removeAttribute('min');
+                    }
+                }
+                syncReturnMin();
+                dateInput.addEventListener('change', syncReturnMin);
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
                 function setBusy(b){
@@ -273,6 +288,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         const isOneWay = tripTypeSel.value === 'oneway';
                         returnDateInput.disabled = isOneWay;
                         if(isOneWay){ returnDateInput.value=''; }
+                        syncReturnMin();
                     };
                     tripTypeSel.addEventListener('change', syncTripUi);
                     syncTripUi();
@@ -799,6 +815,23 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                 const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 dateInput.value=today();
+                function ymdToDate(ymd){ if(!ymd) return null; try{ const d=new Date(String(ymd).trim()+"T00:00:00"); return isNaN(d.getTime())? null : d; }catch{return null} }
+                function dateToYmd(d){ const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
+                function addDaysYmd(ymd, n){ const d=ymdToDate(ymd); if(!d) return ''; d.setDate(d.getDate()+Number(n||0)); return dateToYmd(d); }
+                function syncReturnMin(){
+                    const out=dateInput.value;
+                    if(out){
+                        const min = addDaysYmd(out, 1);
+                        if(min){ returnDateInput.min = min; }
+                        // Clear invalid return if <= outbound
+                        if(returnDateInput.value && returnDateInput.value <= out){ returnDateInput.value=''; }
+                    } else {
+                        returnDateInput.removeAttribute('min');
+                    }
+                }
+                // Initialize and bind
+                syncReturnMin();
+                dateInput.addEventListener('change', syncReturnMin);
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
                 // Trip type behavior: disable/clear return date when 1-way
@@ -807,6 +840,7 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                         const isOneWay = tripTypeSel.value === 'oneway';
                         returnDateInput.disabled = isOneWay;
                         if(isOneWay){ returnDateInput.value=''; }
+                        syncReturnMin();
                     };
                     tripTypeSel.addEventListener('change', syncTripUi);
                     syncTripUi();
