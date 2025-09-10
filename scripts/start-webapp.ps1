@@ -1,16 +1,15 @@
 <#
-Start the WebApp using the current repository's Python environment.
+Start the WebApp in a separate PowerShell window using the repo's Python venv.
 
-Behavior:
-- Uses .\.venv\Scripts\python.exe if present (current environment)
-- If .venv is missing, falls back to scripts/bootstrap.ps1 -RunServer
-- Checks if the port is already listening and exits early
-- Supports foreground or detached mode (default detached with logs)
+Behavior (made permanent per request):
+- Always launches in an external PowerShell console (outside VS Code).
+- Before starting, finds and kills any process listening on the target port.
+- Uses .\.venv\Scripts\python.exe if present; if missing, runs scripts/bootstrap.ps1 -RunServer.
+- Waits briefly and verifies the port is listening; prints status.
 
 Usage:
-  .\scripts\start-webapp.ps1                          # start on 127.0.0.1:8013 (detached)
-  .\scripts\start-webapp.ps1 -Foreground              # run in foreground
-  .\scripts\start-webapp.ps1 -Host 0.0.0.0 -Port 9000 # custom bind
+  .\scripts\start-webapp.ps1                            # start on 127.0.0.1:8013
+  .\scripts\start-webapp.ps1 -BindHost 0.0.0.0 -Port 9000 # custom bind
 #>
 
 param(
@@ -22,6 +21,13 @@ param(
 $ErrorActionPreference = 'Stop'
 Push-Location $PSScriptRoot\..
 try {
+  function Get-PidsByPort([int]$p) {
+    $pids = @()
+    $net = netstat -ano | Select-String ":$p" | ForEach-Object { $_.ToString() }
+    foreach ($line in $net) { if ($line -match "\s+(\d+)$") { $pids += [int]$Matches[1] } }
+    return ($pids | Sort-Object -Unique)
+  }
+
   $py = ".\\.venv\\Scripts\\python.exe"
   if (-not (Test-Path $py)) {
     Write-Warning "[start-webapp] .venv not found. Bootstrapping environment..."
@@ -29,35 +35,33 @@ try {
     return
   }
 
-  # Early port check
-  $listening = $false
-  try { $listening = (Test-NetConnection -ComputerName $BindHost -Port $Port).TcpTestSucceeded } catch { $listening = $false }
-  if ($listening) {
-    Write-Host "[start-webapp] Server already running on http://${BindHost}:$Port" -ForegroundColor Green
-    return
+  # Kill any existing process bound to the port (permanent behavior)
+  $existing = Get-PidsByPort -p $Port
+  if ($existing -and $existing.Count -gt 0) {
+    Write-Warning ("[start-webapp] Found process(es) on :{0} -> {1}. Terminating..." -f $Port, ($existing -join ','))
+    foreach ($pid in $existing) {
+      try { Stop-Process -Id $pid -Force -ErrorAction Stop; Write-Host ("[start-webapp] Stopped PID {0}" -f $pid) -ForegroundColor Yellow } catch { Write-Warning ("[start-webapp] Failed to stop PID {0}: {1}" -f $pid, $_.Exception.Message) }
+    }
+    Start-Sleep -Milliseconds 500
   }
 
-  if ($Foreground) {
-    Write-Host "[start-webapp] Starting foreground server on http://${BindHost}:$Port ..." -ForegroundColor Green
-    & $py -m uvicorn WebApp.app.main:app --host $BindHost --port $Port --log-level info
-  } else {
-    $logDir = "WebApp\\runtime_logs"
-    New-Item -ItemType Directory -Force -Path $logDir | Out-Null
-    $out = Join-Path $logDir ("webapp-uvicorn-{0}.log" -f $Port)
-    $err = Join-Path $logDir ("webapp-uvicorn-{0}.err.log" -f $Port)
-    Write-Host "[start-webapp] Starting detached server on http://${BindHost}:$Port ..." -ForegroundColor Green
-    Start-Process -FilePath $py -ArgumentList @(
-      "-m","uvicorn","WebApp.app.main:app","--host",$BindHost,"--port",$Port,"--log-level","info"
-    ) -RedirectStandardOutput $out -RedirectStandardError $err | Out-Null
-    Start-Sleep -Seconds 2
-    try {
-      if ((Test-NetConnection -ComputerName $BindHost -Port $Port).TcpTestSucceeded) {
-        Write-Host "[start-webapp] Web server is up." -ForegroundColor Green
-      } else {
-        Write-Warning "[start-webapp] Server did not respond on port $Port. Check logs in $logDir"
-      }
-    } catch { Write-Warning "[start-webapp] Connectivity check failed: $_" }
+  # Launch in an external PowerShell window
+  $cmd = @(
+    "Set-Location -LiteralPath '$(Get-Location)';",
+    "& '$py' -m uvicorn WebApp.app.main:app --host $BindHost --port $Port --log-level info"
+  ) -join ' '
+
+  Write-Host "[start-webapp] Launching external console on http://${BindHost}:$Port ..." -ForegroundColor Green
+  $proc = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-NoExit','-Command', $cmd) -WindowStyle Normal -PassThru
+  if ($proc) { Write-Host ("[start-webapp] External PowerShell PID={0}" -f $proc.Id) -ForegroundColor Green }
+
+  # Wait for readiness
+  $ok = $false
+  for ($i=0; $i -lt 60; $i++) {
+    try { if ((Test-NetConnection -ComputerName $BindHost -Port $Port).TcpTestSucceeded) { $ok = $true; break } } catch {}
+    Start-Sleep -Milliseconds 500
   }
+  if ($ok) { Write-Host "[start-webapp] Web server is up." -ForegroundColor Green } else { Write-Warning "[start-webapp] Server not responding yet on port $Port." }
 } finally {
   Pop-Location
 }

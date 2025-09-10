@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Login from './Login';
 
 function useAuthToken() {
@@ -13,6 +13,22 @@ function isIata(s: string){ return /^[A-Z]{3}$/.test((s||'').trim().toUpperCase(
 function ymdToDate(y?: string){ if(!y) return null; const d=new Date(y+"T00:00:00"); return isNaN(d.getTime())? null : d; }
 function daysFromToday(y?: string){ const d=ymdToDate(y); if(!d) return null; const now=new Date(); const td=new Date(now.getFullYear(), now.getMonth(), now.getDate()); const dd=new Date(d.getFullYear(), d.getMonth(), d.getDate()); return Math.round((dd.getTime()-td.getTime())/86400000); }
 function fmtDuration(mins?: number){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
+function fmtHM(ts?: string){
+  if(!ts) return '';
+  // Accepts 'YYYY-MM-DD HH:MM[:SS]' or ISO-like; fallback to raw
+  try{
+    if(/^[0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}/.test(ts)){
+      const s = ts.replace(' ', 'T');
+      const d = new Date(s);
+      if(!isNaN(d.getTime())) return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    }
+    const d = new Date(ts);
+    if(!isNaN(d.getTime())) return d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+  }catch{}
+  // Fallback: try to extract HH:MM
+  const m = ts.match(/([0-9]{1,2}:[0-9]{2}(?: *[AP]M)?)/i);
+  return m? m[1] : ts;
+}
 function summarizeFlight(f: any){
   const segs = Array.isArray(f?.flights)? f.flights : [];
   const a = segs.length? (segs[0]?.departure_airport?.id||'') : '';
@@ -52,6 +68,69 @@ export default function App() {
       } catch { setAuthed(false); }
     })();
   }, [token]);
+  function FlightCard({f}:{f:any}){
+    const segs = Array.isArray(f?.flights)? f.flights : [];
+    const s = summarizeFlight(f);
+    const layovers = Array.isArray(f?.layovers)? f.layovers : [];
+    return (
+      <details style={{border:'1px solid #e5e7eb', borderRadius:8, padding:12, marginBottom:10}}>
+        <summary style={{display:'flex', justifyContent:'space-between', cursor:'pointer', listStyle:'none'}}>
+          <div>{s.route}</div>
+          <div style={{display:'flex', gap:12}}>
+            <span>{s.stops} stops • {s.duration}</span>
+            <strong>{s.price}</strong>
+          </div>
+        </summary>
+        <div style={{marginTop:10}}>
+          {segs.length === 0 ? (
+            <div style={{color:'#5f6368'}}>No segment details available.</div>
+          ) : (
+            <div style={{display:'flex', flexDirection:'column', gap:8}}>
+              {segs.map((seg:any, i:number)=>{
+                const dep = seg?.departure_airport?.id || '';
+                const arr = seg?.arrival_airport?.id || '';
+                const airline = seg?.airline || '';
+                const fnum = seg?.flight_number || '';
+                const depT = fmtHM(seg?.departure_time);
+                const arrT = fmtHM(seg?.arrival_time);
+                const dur = fmtDuration(Number(seg?.duration));
+                return (
+                  <div key={i} style={{display:'grid', gridTemplateColumns:'1fr auto 1fr', alignItems:'center', gap:8}}>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontWeight:600}}>{dep}</div>
+                      <div style={{fontSize:12, color:'#5f6368'}}>{depT}</div>
+                    </div>
+                    <div style={{fontSize:12, color:'#5f6368'}}>
+                      {airline} {fnum}<br/>
+                      {dur}
+                    </div>
+                    <div>
+                      <div style={{fontWeight:600}}>{arr}</div>
+                      <div style={{fontSize:12, color:'#5f6368'}}>{arrT}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {layovers.length>0 && (
+            <div style={{marginTop:10}}>
+              <div style={{fontSize:12, color:'#5f6368', marginBottom:4}}>Layovers</div>
+              <ul style={{margin:0, paddingLeft:16}}>
+                {layovers.map((l:any, idx:number)=> (
+                  <li key={idx} style={{fontSize:12, color:'#5f6368'}}>
+                    {l?.id || '—'} • {fmtDuration(Number(l?.duration))}{l?.overnight? ' • overnight':''}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </details>
+    );
+  }
+
+  
 
   async function authFetch(path: string) {
   const tok = localStorage.getItem('access_token');
@@ -121,33 +200,15 @@ export default function App() {
       <div style={{display:'flex', gap:24, marginTop:16}}>
         <div style={{flex:1}}>
           <h3 style={{margin:'8px 0'}}>Outbound {outbound.length? `(${outbound.length})`: ''}</h3>
-          {outbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : outbound.slice(0,20).map((f,i)=> {
-            const s = summarizeFlight(f);
-            return (
-            <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:8, padding:12, marginBottom:10}}>
-              <div style={{display:'flex', justifyContent:'space-between'}}>
-                <div>{s.route}</div>
-                <div>{s.price}</div>
-              </div>
-              <div style={{fontSize:12, color:'#5f6368'}}>{s.stops} stops • {s.duration}</div>
-            </div>
-            );
-          })}
+          {outbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : outbound.slice(0,20).map((f,i)=> (
+            <FlightCard key={i} f={f} />
+          ))}
         </div>
         <div style={{flex:1}}>
           <h3 style={{margin:'8px 0'}}>Inbound {inbound.length? `(${inbound.length})`: ''}</h3>
-          {inbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : inbound.slice(0,20).map((f,i)=>{
-            const s = summarizeFlight(f);
-            return (
-            <div key={i} style={{border:'1px solid #e5e7eb', borderRadius:8, padding:12, marginBottom:10}}>
-              <div style={{display:'flex', justifyContent:'space-between'}}>
-                <div>{s.route}</div>
-                <div>{s.price}</div>
-              </div>
-              <div style={{fontSize:12, color:'#5f6368'}}>{s.stops} stops • {s.duration}</div>
-            </div>
-            );
-          })}
+          {inbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : inbound.slice(0,20).map((f,i)=> (
+            <FlightCard key={i} f={f} />
+          ))}
         </div>
       </div>
     </div>
