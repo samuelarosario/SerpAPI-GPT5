@@ -89,9 +89,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 header{border-bottom:1px solid #eceff3}
                 .topbar{max-width:980px;margin:0 auto;display:flex;gap:12px;align-items:center;padding:10px 16px}
                 .logo{font-weight:700;color:#4285f4;letter-spacing:.5px}
+                .pill{display:inline-block;margin-left:.4rem;padding:.05rem .45rem;border-radius:999px;font-size:.65rem;vertical-align:middle;background:#0ea5e9;color:#fff}
+                .pill.v2{background:#854d0e}
                 .search{flex:1;display:flex;gap:8px}
                 .search input{flex:1;border:1px solid #dadce0;border-radius:24px;padding:.55rem .9rem;font-size:.95rem}
                 .search button{border:1px solid #dadce0;background:#f8f9fa;border-radius:24px;padding:.55rem .9rem;cursor:pointer}
+                .search .util{background:#fff;border-color:#cbd5e1}
                 .nav a{color:#5f6368;text-decoration:none;font-size:.9rem;margin-left:12px}
                 main{max-width:980px;margin:0 auto;padding:8px 16px}
                 .meta{color:var(--muted);font-size:.85rem;margin:.6rem 0}
@@ -159,7 +162,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                             <option value='3'>Business</option>
                             <option value='4'>First</option>
                         </select>
-                        <button type='submit'>Search</button>
+                        <button type='submit' id='searchBtn'>Search</button>
                     </form>
                     <datalist id='originList'></datalist>
                     <datalist id='destList'></datalist>
@@ -204,6 +207,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const tripTypeSel=document.getElementById('trip_type');
                 const classSelect=document.getElementById('travel_class');
                 const sortSel=document.getElementById('sort');
+                const searchBtn=document.getElementById('searchBtn');
+                const swapBtn=document.getElementById('swapBtn');
+                const clearBtn=document.getElementById('clearBtn');
             const countEl=document.getElementById('count');
             const expandAllBtn=document.getElementById('expandAll');
             const collapseAllBtn=document.getElementById('collapseAll');
@@ -215,10 +221,52 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const tabIn=document.getElementById('tabInbound');
 
                 const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
-                function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
-                dateInput.value=today();
+                function todayPlus(n){ const d=new Date(); d.setDate(d.getDate()+Number(n||0)); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
+                // Default to tomorrow to satisfy validation (min 1 day ahead)
+                if(!dateInput.value){ dateInput.value=todayPlus(1); }
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+                function setBusy(b){
+                    [originInput,destinationInput,dateInput,returnDateInput,tripTypeSel,classSelect,sortSel,searchBtn,swapBtn,clearBtn].forEach(el=>{ if(el){ el.disabled=!!b; }});
+                    if(searchBtn){ searchBtn.textContent = b? 'Searching…' : 'Search'; }
+                }
+                function updateUrl(o,d,dt,ret,tt,tc){
+                    try{
+                        const p = new URLSearchParams();
+                        if(o) p.set('o', o);
+                        if(d) p.set('d', d);
+                        if(dt) p.set('dt', dt);
+                        if(ret) p.set('ret', ret);
+                        if(tt) p.set('tt', tt);
+                        if(tc) p.set('tc', String(tc));
+                        const q = p.toString();
+                        const url = q ? (`${location.pathname}?${q}`) : location.pathname;
+                        history.replaceState(null, '', url);
+                    }catch{}
+                }
+                function saveLast(o,d,dt,ret,tt,tc){
+                    try{ localStorage.setItem('fsV2_last', JSON.stringify({o,d,dt,ret,tt,tc})); }catch{}
+                }
+                function loadInitial(){
+                    try{
+                        const sp = new URLSearchParams(location.search);
+                        const gotQ = sp.get('o')||sp.get('d')||sp.get('dt');
+                        let data = null;
+                        if(gotQ){
+                            data = { o: (sp.get('o')||'').toUpperCase(), d:(sp.get('d')||'').toUpperCase(), dt: sp.get('dt')||'', ret: sp.get('ret')||'', tt: sp.get('tt')||'round', tc: Number(sp.get('tc')||'1') };
+                        } else {
+                            try{ data = JSON.parse(localStorage.getItem('fsV2_last')||'null'); }catch{ data=null }
+                        }
+                        if(data){
+                            originInput.value = data.o||'';
+                            destinationInput.value = data.d||'';
+                            dateInput.value = data.dt||dateInput.value;
+                            returnDateInput.value = data.ret||'';
+                            if(tripTypeSel){ tripTypeSel.value = (data.tt==='oneway'?'oneway':'round'); const ev = new Event('change'); tripTypeSel.dispatchEvent(ev); }
+                            if(classSelect){ classSelect.value = String(data.tc||'1'); }
+                        }
+                    }catch{}
+                }
                 // Trip type behavior: disable/clear return date when 1-way
                 if(tripTypeSel){
                     const syncTripUi=()=>{
@@ -262,6 +310,10 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 }
                 attachSuggest(originInput,'originList');
                 attachSuggest(destinationInput,'destList');
+
+                function isIata(s){ return /^[A-Z]{3}$/.test(String(s||'').trim().toUpperCase()); }
+                function ymdToDate(ymd){ if(!ymd) return null; try{ const d=new Date(String(ymd).trim()+"T00:00:00"); return isNaN(d.getTime())? null : d; }catch{return null} }
+                function daysFromToday(ymd){ const d=ymdToDate(ymd); if(!d) return null; const t=new Date(); const td=new Date(t.getFullYear(),t.getMonth(),t.getDate()); const dd=new Date(d.getFullYear(),d.getMonth(),d.getDate()); return Math.round((dd-td)/86400000); }
 
                 function fmtDuration(mins){ if(mins==null||isNaN(mins)) return ''; const h=Math.floor(mins/60), m=mins%60; return `${h} hr ${m} min`; }
         function parseTs(ts){
@@ -454,6 +506,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 async function runSearch(o,d,dt,ret,tclass){
                     statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
+                    setBusy(true);
                     CURRENT_DT = dt || '';
                     CURRENT_RET_DT = ret || '';
                     CURRENT_ORIG = (o||'').toUpperCase();
@@ -466,6 +519,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     } else if(ret){
                         url += `&return_date=${encodeURIComponent(ret)}`;
                     }
+                    updateUrl(CURRENT_ORIG, CURRENT_DEST, CURRENT_DT, CURRENT_RET_DT, (isOneWay?'oneway':'round'), tc);
                     const r=await authFetch(url);
                     if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
                     const data=await r.json();
@@ -519,21 +573,46 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     // default to outbound tab if it has items; otherwise show inbound
                     if(OUT.length>0){ currentView='outbound'; if(tabOut){ tabOut.classList.add('active'); } if(tabIn){ tabIn.classList.remove('active'); } }
                     else { currentView='inbound'; if(tabIn){ tabIn.classList.add('active'); } if(tabOut){ tabOut.classList.remove('active'); } }
+                    saveLast(CURRENT_ORIG, CURRENT_DEST, CURRENT_DT, usedReturnDate, (isOneWay?'oneway':'round'), tc);
                     page=1; render();
+                    setBusy(false);
                 }
 
-                        f.addEventListener('submit', (e)=>{
+                        f.addEventListener('submit', async (e)=>{
                     e.preventDefault();
-                    const o=(originInput.value||'').trim().toUpperCase();
-                    const d=(destinationInput.value||'').trim().toUpperCase();
-                    const dt=dateInput.value;
+                    let o=(originInput.value||'').trim().toUpperCase();
+                    let d=(destinationInput.value||'').trim().toUpperCase();
+                    const dt=(dateInput.value||'').trim();
                     const ret=(returnDateInput.value||'').trim();
                     const tclass=(classSelect?.value)||'1';
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
-                    // If one-way selected, ignore ret
-                    const isOneWay = (tripTypeSel?.value === 'oneway');
-                    runSearch(o,d,dt,(isOneWay? undefined : (ret||undefined)),tclass);
+                    // Resolve non-IATA inputs via suggest API (pick first match)
+                    if(!isIata(o)){
+                        const list = await fetchAirports(o);
+                        if(list && list.length && isIata(list[0].code)) o = list[0].code.toUpperCase();
+                    }
+                    if(!isIata(d)){
+                        const list = await fetchAirports(d);
+                        if(list && list.length && isIata(list[0].code)) d = list[0].code.toUpperCase();
+                    }
+                    if(!isIata(o) || !isIata(d)){
+                        statusEl.innerHTML='<span class="error">Please use a valid 3-letter IATA airport code for origin and destination.</span>';
+                        return;
+                    }
+                    // Date horizon checks: outbound at least +1 day; return (if any) >= outbound
+                    const diff = daysFromToday(dt);
+                    if(diff===null || diff < 1){ statusEl.innerHTML='<span class="error">Outbound date must be at least 1 day from today.</span>'; return; }
+                    if(tripTypeSel?.value !== 'oneway'){
+                        if(!ret){ statusEl.innerHTML='<span class="error">Return date is required for 2-way; it will be used for the inbound search.</span>'; return; }
+                        const dOut=ymdToDate(dt), dRet=ymdToDate(ret);
+                        if(!dRet || dRet < dOut){ statusEl.innerHTML='<span class="error">Return date cannot be earlier than outbound.</span>'; return; }
+                    }
+                    const isRound = (tripTypeSel?.value !== 'oneway');
+                    runSearch(o,d,dt,(isRound? ret : undefined),tclass);
                 });
+
+                        if(swapBtn){ swapBtn.addEventListener('click', ()=>{ const o=originInput.value; originInput.value=destinationInput.value; destinationInput.value=o; originInput.focus(); }); }
+                        if(clearBtn){ clearBtn.addEventListener('click', ()=>{ originInput.value=''; destinationInput.value=''; dateInput.value=''; returnDateInput.value=''; statusEl.className='meta'; statusEl.textContent='Enter origin, destination and date (YYYY-MM-DD).'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none'; updateUrl('', '', '', '', '', ''); }); }
 
                         // Per-result toggle button (inside each item)
                         resEl.addEventListener('click', (e)=>{
@@ -561,6 +640,8 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                 const cur=currentResultIndex(); if(cur>=0){ e.preventDefault(); const det=resultList()[cur]; det.open = !det.open; }
                             }
                         });
+
+                        loadInitial();
             </script>
         </body></html>""")
 
@@ -634,7 +715,7 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
         <body>
             <header>
                 <div class='topbar'>
-                    <div class='logo'>SerpFlights</div>
+                    <div class='logo'>SerpFlights <span class='pill v2'>V2</span></div>
                     <form id='fsForm' class='search'>
                         <input id='origin_code' placeholder='Origin: code, city, or name' maxlength='32' list='originList' required />
                         <input id='destination' placeholder='Destination: code, city, or name' maxlength='32' list='destList' required />
@@ -650,7 +731,9 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                             <option value='3'>Business</option>
                             <option value='4'>First</option>
                         </select>
-                        <button type='submit'>Search</button>
+                        <button type='submit' id='searchBtn'>Search</button>
+                        <button type='button' id='swapBtn' class='util' title='Swap origin/destination'>Swap</button>
+                        <button type='button' id='clearBtn' class='util' title='Clear form'>Clear</button>
                     </form>
                     <datalist id='originList'></datalist>
                     <datalist id='destList'></datalist>
@@ -695,7 +778,10 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                 const tripTypeSel=document.getElementById('trip_type');
                 const classSelect=document.getElementById('travel_class');
                 const sortSel=document.getElementById('sort');
+                const searchBtn=document.getElementById('searchBtn');
             const countEl=document.getElementById('count');
+            const swapBtn=document.getElementById('swapBtn');
+            const clearBtn=document.getElementById('clearBtn');
             const expandAllBtn=document.getElementById('expandAll');
             const collapseAllBtn=document.getElementById('collapseAll');
                 const pager=document.getElementById('pager');
@@ -704,6 +790,11 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                 const pageInfo=document.getElementById('pageInfo');
                 const tabOut=document.getElementById('tabOutbound');
                 const tabIn=document.getElementById('tabInbound');
+
+                function setBusy(b){
+                    [originInput,destinationInput,dateInput,returnDateInput,tripTypeSel,classSelect,sortSel,searchBtn,swapBtn,clearBtn].forEach(el=>{ if(el){ el.disabled=!!b; }});
+                    if(searchBtn){ searchBtn.textContent = b? 'Searching…' : 'Search'; }
+                }
 
                 const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
@@ -945,40 +1036,58 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                 async function runSearch(o,d,dt,ret,tclass){
                     statusEl.className='meta';
                     statusEl.textContent='Searching...'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none';
+                    setBusy(true);
                     CURRENT_DT = dt || '';
                     CURRENT_RET_DT = ret || '';
                     CURRENT_ORIG = (o||'').toUpperCase();
                     CURRENT_DEST = (d||'').toUpperCase();
                     const tc = (tclass && Number(tclass)) ? Number(tclass) : (Number(classSelect?.value)||1);
-                    let url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}&travel_class=${tc}`;
-                    const isOneWay = (tripTypeSel?.value === 'oneway');
-                    if(isOneWay){
-                        url += `&one_way=1`;
-                    } else if(ret){
-                        url += `&return_date=${encodeURIComponent(ret)}`;
-                    }
-                    const r=await authFetch(url);
-                    if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
+                    const isRoundUI = (tripTypeSel?.value !== 'oneway');
+
+                    // Always 1-way outbound
+                    const urlOut = `/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}&travel_class=${tc}&one_way=1`;
+                    const r=await authFetch(urlOut);
+                    if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; setBusy(false); return; }
                     const data=await r.json();
-                    if(!data.success){ statusEl.innerHTML='<span class="error">No results: '+(data.error||'unknown')+'</span>'; return; }
-                    const flights=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
+                    if(!data.success){ statusEl.innerHTML='<span class="error">No results: '+(data.error||'unknown')+'</span>'; setBusy(false); return; }
+                    const flightsOut=(data.data?.best_flights||[]).concat(data.data?.other_flights||[]);
                     META.source = data.source || '';
-                    // Extract search parameters when available to show class and trip mode
-                    const SP = (data && data.data && data.data.search_parameters) ? data.data.search_parameters : {};
-                    const CLASS_MAP = {1:'Economy', 2:'Premium', 3:'Business', 4:'First'};
-                    const classLabel = CLASS_MAP[Number(SP.travel_class || (classSelect?.value||1))] || '';
-                    const isRoundTrip = !!SP.return_date || !!CURRENT_RET_DT;
-                    const usedReturnDate = SP.return_date || CURRENT_RET_DT || '';
-                    if(!flights.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; return; }
+
+                    // Optionally run reverse one-way if 2-way selected and return date provided
+                    let flightsIn = [];
+                    if(isRoundUI){
+                        if(!ret){
+                            statusEl.innerHTML = '<span class="error">Return date is required for 2-way; it will be used for the inbound search.</span>';
+                            setBusy(false);
+                            return;
+                        }
+                        const urlIn = `/api/flight_search?origin=${encodeURIComponent(d)}&destination=${encodeURIComponent(o)}&date=${encodeURIComponent(ret)}&travel_class=${tc}&one_way=1`;
+                        try{
+                            const r2 = await authFetch(urlIn);
+                            if(r2.ok){
+                                const data2 = await r2.json();
+                                if(data2 && data2.success){
+                                    flightsIn = (data2.data?.best_flights||[]).concat(data2.data?.other_flights||[]);
+                                } else {
+                                    statusEl.innerHTML = 'Inbound search returned no results.';
+                                }
+                            } else {
+                                statusEl.innerHTML = 'Inbound search failed.';
+                            }
+                        }catch{ statusEl.innerHTML = 'Inbound search failed.'; }
+                    }
+
+                    const flightsAll = flightsOut.concat(flightsIn);
+                    if(!flightsAll.length){ statusEl.className='meta'; statusEl.textContent='No results.'; resEl.innerHTML=''; setBusy(false); return; }
+
                     // Build list of unique airport codes and fetch airport details in batch
                     const setCodes = new Set([o.toUpperCase(), d.toUpperCase()]);
-                    for(const f of flights){
+                    for(const f of flightsAll){
                         for(const s of (f.flights||[])){
                             const a=(s?.departure_airport?.id||'').toUpperCase();
                             const b=(s?.arrival_airport?.id||'').toUpperCase();
                             if(a) setCodes.add(a); if(b) setCodes.add(b);
                         }
-                        // include layover airports so labels render properly
                         for(const lay of (f.layovers||[])){
                             const c=(lay?.id||'').toUpperCase(); if(c) setCodes.add(c);
                         }
@@ -988,6 +1097,7 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                         const rr = await authFetch(`/api/airports/by_codes?codes=${encodeURIComponent(list)}`);
                         if(rr.ok){ const arr = await rr.json(); const map = Object.create(null); (arr||[]).forEach(it=>{ if(it && it.code){ map[(it.code||'').toUpperCase()] = it; } }); AIRPORTS = map; }
                     }catch{}
+
                     // Resolve friendly names for origin/destination for a larger heading
                     async function fetchAirport(code){
                         try{
@@ -1000,17 +1110,18 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                     const oLabel = `${(ao?.city||ao?.name||o)} (${o})`;
                     const dLabel = `${(ad?.city||ad?.name||d)} (${d})`;
                     statusEl.className='headline';
-                    const modeStr = isRoundTrip ? '2-way' : '1-way';
+                    const CLASS_MAP = {1:'Economy', 2:'Premium', 3:'Business', 4:'First'};
+                    const classLabel = CLASS_MAP[tc] || '';
+                    const datesLine = isRoundUI ? (`on ${dt} • return ${ret}`) : (`on ${dt}`);
+                    const modeStr = isRoundUI ? '2-way' : '1-way';
                     const suffix = [classLabel, modeStr].filter(Boolean).join(' • ');
-                    // Break into multiple lines: route, dates, details
-                    const datesLine = usedReturnDate ? `on ${dt} • return ${usedReturnDate}` : `on ${dt}`;
                     statusEl.innerHTML = `<div>${oLabel} to ${dLabel}</div><div>${datesLine}</div>${suffix?`<div>${suffix}</div>`:''}`;
-                    ALL = normalize(flights);
+                    ALL = normalize(flightsAll);
                     recomputeBuckets();
-                    // default to outbound tab if it has items; otherwise show inbound
                     if(OUT.length>0){ currentView='outbound'; if(tabOut){ tabOut.classList.add('active'); } if(tabIn){ tabIn.classList.remove('active'); } }
                     else { currentView='inbound'; if(tabIn){ tabIn.classList.add('active'); } if(tabOut){ tabOut.classList.remove('active'); } }
                     page=1; render();
+                    setBusy(false);
                 }
 
                         f.addEventListener('submit', (e)=>{
@@ -1021,10 +1132,12 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                     const ret=(returnDateInput.value||'').trim();
                     const tclass=(classSelect?.value)||'1';
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
-                    // If one-way selected, ignore ret
-                    const isOneWay = (tripTypeSel?.value === 'oneway');
-                    runSearch(o,d,dt,(isOneWay? undefined : (ret||undefined)),tclass);
+                    const isRound = (tripTypeSel?.value !== 'oneway');
+                    if(isRound && !ret){ statusEl.innerHTML='<span class="error">Return date is required for 2-way; it will be used for the inbound search.</span>'; return; }
+                    runSearch(o,d,dt,(isRound? ret : undefined),tclass);
                 });
+                        if(swapBtn){ swapBtn.addEventListener('click', ()=>{ const o=originInput.value; originInput.value=destinationInput.value; destinationInput.value=o; originInput.focus(); }); }
+                        if(clearBtn){ clearBtn.addEventListener('click', ()=>{ originInput.value=''; destinationInput.value=''; dateInput.value=''; returnDateInput.value=''; statusEl.className='meta'; statusEl.textContent='Enter origin, destination and date (YYYY-MM-DD).'; resEl.innerHTML=''; countEl.textContent=''; pager.style.display='none'; }); }
 
                         // Per-result toggle button (inside each item)
                         resEl.addEventListener('click', (e)=>{
