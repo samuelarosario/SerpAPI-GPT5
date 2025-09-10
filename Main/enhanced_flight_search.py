@@ -806,15 +806,19 @@ class EnhancedFlightSearchClient:
                 # Batch collect flights
                 flight_rows: list[tuple] = []
                 now_iso = datetime.now().isoformat()
+                # Treat all stored results as 'Round trip' when the search includes a return_date
+                is_round_trip_search = bool(search_params.get('return_date'))
                 for group, label in ((api_response.get('best_flights', []), 'best'), (api_response.get('other_flights', []), 'other')):
                     for rank, flight in enumerate(group, 1):
                         legacy = 'best_flight' if label == 'best' else 'other_flight'
+                        # Prefer explicit type when present; otherwise coerce to search context
+                        flight_type_text = flight.get('type') or ('Round trip' if is_round_trip_search else 'One way')
                         flight_rows.append((
                             search_id, legacy, rank,
                             flight.get('total_duration'),
                             flight.get('price'),
                             'USD',
-                            flight.get('type', 'One way'),
+                            flight_type_text,
                             len(flight.get('layovers', [])),
                             flight.get('carbon_emissions', {}).get('this_flight'),
                             flight.get('carbon_emissions', {}).get('typical_for_this_route'),
