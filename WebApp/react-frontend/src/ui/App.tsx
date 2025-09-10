@@ -68,63 +68,100 @@ export default function App() {
       } catch { setAuthed(false); }
     })();
   }, [token]);
-  function FlightCard({f}:{f:any}){
-    const segs = Array.isArray(f?.flights)? f.flights : [];
+  function ItineraryCard({ f }: { f: any }) {
     const s = summarizeFlight(f);
-    const layovers = Array.isArray(f?.layovers)? f.layovers : [];
+    const segs: any[] = Array.isArray(f?.flights) ? f.flights : [];
+    const layovers: any[] = Array.isArray(f?.layovers) ? f.layovers : [];
+    const travelClassMap: Record<string,string> = { '1':'Economy', '2':'Premium Economy', '3':'Business', '4':'First' };
+    const cls = travelClassMap[tclass] ?? 'Economy';
+
+    const rowStyle: React.CSSProperties = { display:'grid', gridTemplateColumns:'16px 1fr', gap:12, alignItems:'start' };
+    const dot: React.CSSProperties = { width:8, height:8, borderRadius:999, background:'#9aa0a6', marginTop:6 };
+    const pipe: React.CSSProperties = { borderLeft:'2px dotted #d1d5db', marginLeft:3, paddingLeft:0, height:'100%' };
+    const small: React.CSSProperties = { fontSize:12, color:'#5f6368' };
+    const strong: React.CSSProperties = { fontWeight:600 };
+
     return (
-      <details style={{border:'1px solid #e5e7eb', borderRadius:8, padding:12, marginBottom:10}}>
-        <summary style={{display:'flex', justifyContent:'space-between', cursor:'pointer', listStyle:'none'}}>
-          <div>{s.route}</div>
-          <div style={{display:'flex', gap:12}}>
-            <span>{s.stops} stops • {s.duration}</span>
-            <strong>{s.price}</strong>
+      <details style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#0f172a0a'}}>
+        <summary style={{display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', listStyle:'none'}}>
+          <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+            <span style={{fontWeight:600}}>{s.route}</span>
+            <span style={{...small}}>• {s.stops} stops • {s.duration}</span>
+            {f?.eco_note && (
+              <span style={{display:'inline-block', background:'#DCFCE7', color:'#166534', border:'1px solid #86EFAC', borderRadius:6, padding:'2px 8px', fontSize:12}}>
+                {String(f.eco_note)}
+              </span>
+            )}
           </div>
+          <div style={{fontSize:16, fontWeight:700}}>{s.price}</div>
         </summary>
-        <div style={{marginTop:10}}>
-          {segs.length === 0 ? (
-            <div style={{color:'#5f6368'}}>No segment details available.</div>
-          ) : (
-            <div style={{display:'flex', flexDirection:'column', gap:8}}>
-              {segs.map((seg:any, i:number)=>{
-                const dep = seg?.departure_airport?.id || '';
-                const arr = seg?.arrival_airport?.id || '';
-                const airline = seg?.airline || '';
-                const fnum = seg?.flight_number || '';
-                const depT = fmtHM(seg?.departure_time);
-                const arrT = fmtHM(seg?.arrival_time);
-                const dur = fmtDuration(Number(seg?.duration));
-                return (
-                  <div key={i} style={{display:'grid', gridTemplateColumns:'1fr auto 1fr', alignItems:'center', gap:8}}>
-                    <div style={{textAlign:'right'}}>
-                      <div style={{fontWeight:600}}>{dep}</div>
-                      <div style={{fontSize:12, color:'#5f6368'}}>{depT}</div>
+        <div style={{marginTop:12, display:'grid', gridTemplateColumns:'auto 1fr', gap:0}}>
+          <div style={{gridColumn:'1 / span 1'}}></div>
+          <div style={{gridColumn:'2 / span 1'}}></div>
+          <div style={{gridColumn:'1 / span 1', ...pipe}}></div>
+          <div style={{gridColumn:'2 / span 1'}}>
+            {/* Segments timeline */}
+            {segs.length === 0 ? (
+              <div style={{...small}}>No segment details available.</div>
+            ) : (
+              <div style={{display:'flex', flexDirection:'column', gap:10}}>
+                {segs.map((seg:any, i:number) => {
+                  const depCode = seg?.departure_airport?.id || '';
+                  const arrCode = seg?.arrival_airport?.id || '';
+                  const depName = seg?.departure_airport?.name || depCode;
+                  const arrName = seg?.arrival_airport?.name || arrCode;
+                  const airline = seg?.airline || '';
+                  const fnum = seg?.flight_number || '';
+                  const aircraft = seg?.aircraft || '';
+                  const depT = fmtHM(seg?.departure_time);
+                  const arrT = fmtHM(seg?.arrival_time);
+                  const dur = fmtDuration(Number(seg?.duration));
+                  const lay = layovers[i]; // layover after this segment (i -> between i and i+1)
+                  return (
+                    <div key={i}>
+                      <div style={rowStyle}>
+                        <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
+                          <div style={dot}></div>
+                        </div>
+                        <div>
+                          <div style={{display:'flex', justifyContent:'space-between', gap:8}}>
+                            <div>
+                              <div style={strong}>{depT} • {depName} ({depCode})</div>
+                              <div style={small}>Travel time: {dur}</div>
+                            </div>
+                            <div style={{textAlign:'right'}}>
+                              <div style={strong}>{arrT} • {arrName} ({arrCode})</div>
+                            </div>
+                          </div>
+                          <div style={{...small, marginTop:4}}>
+                            {[airline, cls, aircraft].filter(Boolean).join(' • ')}{fnum? ` • ${airline ? '' : 'Flight '}#${fnum}`:''}
+                          </div>
+                        </div>
+                      </div>
+                      {lay && (
+                        <div style={{margin:'10px 0 0 0'}}>
+                          <div style={rowStyle}>
+                            <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
+                              <div style={{width:8, height:8}}></div>
+                            </div>
+                            <div>
+                              <hr style={{border:'none', borderTop:'1px solid #e5e7eb', margin:'8px 0'}} />
+                              <div style={{display:'flex', justifyContent:'space-between'}}>
+                                <div style={small}>
+                                  {fmtDuration(Number(lay?.duration))} layover • {lay?.name || lay?.id || (arrName + ` (${arrCode})`)} {lay?.overnight ? '• Overnight' : ''}
+                                </div>
+                                <div></div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div style={{fontSize:12, color:'#5f6368'}}>
-                      {airline} {fnum}<br/>
-                      {dur}
-                    </div>
-                    <div>
-                      <div style={{fontWeight:600}}>{arr}</div>
-                      <div style={{fontSize:12, color:'#5f6368'}}>{arrT}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {layovers.length>0 && (
-            <div style={{marginTop:10}}>
-              <div style={{fontSize:12, color:'#5f6368', marginBottom:4}}>Layovers</div>
-              <ul style={{margin:0, paddingLeft:16}}>
-                {layovers.map((l:any, idx:number)=> (
-                  <li key={idx} style={{fontSize:12, color:'#5f6368'}}>
-                    {l?.id || '—'} • {fmtDuration(Number(l?.duration))}{l?.overnight? ' • overnight':''}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </details>
     );
@@ -201,13 +238,13 @@ export default function App() {
         <div style={{flex:1}}>
           <h3 style={{margin:'8px 0'}}>Outbound {outbound.length? `(${outbound.length})`: ''}</h3>
           {outbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : outbound.slice(0,20).map((f,i)=> (
-            <FlightCard key={i} f={f} />
+            <ItineraryCard key={i} f={f} />
           ))}
         </div>
         <div style={{flex:1}}>
           <h3 style={{margin:'8px 0'}}>Inbound {inbound.length? `(${inbound.length})`: ''}</h3>
           {inbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : inbound.slice(0,20).map((f,i)=> (
-            <FlightCard key={i} f={f} />
+            <ItineraryCard key={i} f={f} />
           ))}
         </div>
       </div>
