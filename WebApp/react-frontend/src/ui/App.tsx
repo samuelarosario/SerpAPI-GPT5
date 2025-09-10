@@ -40,6 +40,26 @@ function summarizeFlight(f: any){
   return { route, price, duration, stops };
 }
 
+function stopsCount(f: any){
+  const segs = Array.isArray(f?.flights)? f.flights : [];
+  return Math.max(0, segs.length - 1);
+}
+function totalDurationMinutes(f: any){
+  const td = Number(f?.total_duration);
+  if(!isNaN(td)) return td;
+  const segs = Array.isArray(f?.flights)? f.flights : [];
+  const sum = segs.reduce((acc:number, s:any)=> acc + (Number(s?.duration)||0), 0);
+  return sum || 0;
+}
+function sortFlightsByStops(list: any[]){
+  return [...(list||[])].sort((a,b)=>{
+    const sa = stopsCount(a), sb = stopsCount(b);
+    if (sa !== sb) return sa - sb; // fewer stops first
+    const da = totalDurationMinutes(a), db = totalDurationMinutes(b);
+    return da - db; // shorter total duration next
+  });
+}
+
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate()+1); return ymd(d); };
 
 export default function App() {
@@ -117,6 +137,11 @@ export default function App() {
                   const arrT = fmtHM(seg?.arrival_time);
                   const dur = fmtDuration(Number(seg?.duration));
                   const lay = layovers[i]; // layover after this segment (i -> between i and i+1)
+                  const layDurMin = Number(lay?.duration) || 0;
+                  const isShortLayover = layDurMin > 0 && layDurMin < 120; // < 2 hours
+                  const noticeStyle: React.CSSProperties = isShortLayover
+                    ? { background:'#FEE2E2', border:'1px solid #FCA5A5', color:'#991B1B', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' }
+                    : { background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' };
                   return (
                     <div key={i}>
                       <div style={rowStyle}>
@@ -145,17 +170,22 @@ export default function App() {
                               <div style={{width:8, height:8}}></div>
                             </div>
                             <div>
-                              <div style={{background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                              <div style={noticeStyle}>
                                 <div style={{fontSize:13}}>
                                   <span style={{fontWeight:700}}>{fmtDuration(Number(lay?.duration))} layover</span>
                                   {` • ${lay?.name || lay?.id || (arrName + ' (' + arrCode + ')')}`}
                                 </div>
-                                {lay?.overnight && (
+                                {isShortLayover ? (
+                                  <div style={{display:'flex', alignItems:'center', gap:6, color:'#991B1B', fontWeight:700}} title="Short layover">
+                                    <span aria-hidden>⚠️</span>
+                                    <span>Short layover — you could miss the next flight</span>
+                                  </div>
+                                ) : (lay?.overnight && (
                                   <div style={{display:'flex', alignItems:'center', gap:6, color:'#B91C1C', fontWeight:700}} title="Overnight layover">
                                     <span aria-hidden>⚠️</span>
                                     <span>Overnight</span>
                                   </div>
-                                )}
+                                ))}
                               </div>
                             </div>
                           </div>
@@ -195,20 +225,20 @@ export default function App() {
       const q1 = `/api/flight_search?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
       const r1 = await authFetch(q1); const j1 = await r1.json();
       if(!j1?.success){ setError(j1?.error||'Search failed'); setBusy(false); return; }
-      const out = [
+  const out = [
         ...(Array.isArray(j1?.data?.best_flights)? j1.data.best_flights : []),
         ...(Array.isArray(j1?.data?.other_flights)? j1.data.other_flights : [])
       ];
-      setOutbound(out);
+  setOutbound(sortFlightsByStops(out));
       if(trip !== 'oneway' && ret){
         const q2 = `/api/flight_search?origin=${encodeURIComponent(dest)}&destination=${encodeURIComponent(origin)}&date=${encodeURIComponent(ret)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
         const r2 = await authFetch(q2); const j2 = await r2.json();
         if(!j2?.success){ setError(j2?.error||'Inbound failed'); setBusy(false); return; }
-        const inn = [
+  const inn = [
           ...(Array.isArray(j2?.data?.best_flights)? j2.data.best_flights : []),
           ...(Array.isArray(j2?.data?.other_flights)? j2.data.other_flights : [])
         ];
-        setInbound(inn);
+  setInbound(sortFlightsByStops(inn));
       } else {
         setInbound([]);
       }
