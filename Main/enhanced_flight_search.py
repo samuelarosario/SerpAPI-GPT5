@@ -97,6 +97,7 @@ class EnhancedFlightSearchClient:
                        currency: str = "USD",
                        max_cache_age_hours: int = 24,
                        force_api: bool = False,
+                       one_way: bool = False,
                        **kwargs) -> dict[str, Any]:
         """
         Smart flight search that checks cache first, then API
@@ -144,7 +145,7 @@ class EnhancedFlightSearchClient:
         }
         
         # Auto-generate return date for round-trip searches to capture more data
-        if not return_date:
+        if not one_way and not return_date:
             from datetime import datetime, timedelta
             try:
                 outbound_dt = datetime.strptime(outbound_date, '%Y-%m-%d')
@@ -155,8 +156,8 @@ class EnhancedFlightSearchClient:
             except ValueError:
                 self.logger.warning(f"Could not parse outbound_date: {outbound_date}")
         
-        # Always include return_date for round-trip searches
-        if return_date:
+        # Always include return_date for round-trip searches (unless one-way explicit)
+        if not one_way and return_date:
             search_params['return_date'] = return_date
             
         # Add additional parameters

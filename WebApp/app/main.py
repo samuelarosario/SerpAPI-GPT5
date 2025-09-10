@@ -149,6 +149,10 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         <input id='destination' placeholder='Destination: code, city, or name' maxlength='32' list='destList' required />
                         <input id='date' type='date' required />
                         <input id='return_date' type='date' placeholder='Return (optional)' />
+                        <select id='trip_type' title='Trip type'>
+                            <option value='round' selected>2-way (Round trip)</option>
+                            <option value='oneway'>1-way</option>
+                        </select>
                         <select id='travel_class' title='Travel class'>
                             <option value='1' selected>Economy</option>
                             <option value='2'>Premium</option>
@@ -197,6 +201,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const destinationInput=document.getElementById('destination');
                 const dateInput=document.getElementById('date');
                 const returnDateInput=document.getElementById('return_date');
+                const tripTypeSel=document.getElementById('trip_type');
                 const classSelect=document.getElementById('travel_class');
                 const sortSel=document.getElementById('sort');
             const countEl=document.getElementById('count');
@@ -214,6 +219,16 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 dateInput.value=today();
 
                 function authFetch(url){ const t=localStorage.getItem('access_token'); if(!t){window.location='/'; throw new Error('Not authenticated');} return fetch(url,{headers:{'Authorization':'Bearer '+t}}); }
+                // Trip type behavior: disable/clear return date when 1-way
+                if(tripTypeSel){
+                    const syncTripUi=()=>{
+                        const isOneWay = tripTypeSel.value === 'oneway';
+                        returnDateInput.disabled = isOneWay;
+                        if(isOneWay){ returnDateInput.value=''; }
+                    };
+                    tripTypeSel.addEventListener('change', syncTripUi);
+                    syncTripUi();
+                }
                 // --- Autosuggest for airports ---
                 async function fetchAirports(q){
                     if(!q||q.length<2) return [];
@@ -317,8 +332,8 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const a=(x.firstDep||'').toUpperCase();
                     const b=(x.lastArr||'').toUpperCase();
                     if(a && b){
-                        if(a===CURRENT_ORIG && b===CURRENT_DEST) return 'outbound';
-                        if(a===CURRENT_DEST && b===CURRENT_ORIG) return 'inbound';
+                        if (a===CURRENT_ORIG && b===CURRENT_DEST) return 'outbound';
+                        if (a===CURRENT_DEST && b===CURRENT_ORIG) return 'inbound';
                     }
                     return 'other';
                 }
@@ -445,7 +460,12 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     CURRENT_DEST = (d||'').toUpperCase();
                     const tc = (tclass && Number(tclass)) ? Number(tclass) : (Number(classSelect?.value)||1);
                     let url=`/api/flight_search?origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&date=${encodeURIComponent(dt)}&travel_class=${tc}`;
-                    if(ret){ url += `&return_date=${encodeURIComponent(ret)}`; }
+                    const isOneWay = (tripTypeSel?.value === 'oneway');
+                    if(isOneWay){
+                        url += `&one_way=1`;
+                    } else if(ret){
+                        url += `&return_date=${encodeURIComponent(ret)}`;
+                    }
                     const r=await authFetch(url);
                     if(!r.ok){ const txt=await r.text(); statusEl.innerHTML='<span class="error">Error: '+txt+'</span>'; return; }
                     const data=await r.json();
@@ -510,7 +530,9 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                     const ret=(returnDateInput.value||'').trim();
                     const tclass=(classSelect?.value)||'1';
                     if(!o||!d||!dt){ statusEl.innerHTML='<span class="error">All fields are required.</span>'; return; }
-                    runSearch(o,d,dt,ret||undefined,tclass);
+                    // If one-way selected, ignore ret
+                    const isOneWay = (tripTypeSel?.value === 'oneway');
+                    runSearch(o,d,dt,(isOneWay? undefined : (ret||undefined)),tclass);
                 });
 
                         // Per-result toggle button (inside each item)
@@ -547,12 +569,15 @@ async def api_flight_search(origin: str = Query(..., min_length=3, max_length=5,
                             destination: str = Query(..., min_length=3, max_length=5, description="Destination IATA"),
                             date: str = Query(..., regex=r"^\d{4}-\d{2}-\d{2}$", description="Outbound date YYYY-MM-DD"),
                             return_date: str | None = Query(None, regex=r"^\d{4}-\d{2}-\d{2}$", description="Return date YYYY-MM-DD (optional)"),
-                            travel_class: int = Query(1, ge=1, le=4, description="Travel class (1=Economy,2=Premium,3=Business,4=First)")):
+                            travel_class: int = Query(1, ge=1, le=4, description="Travel class (1=Economy,2=Premium,3=Business,4=First)"),
+                            one_way: bool = Query(False, description="Set true for 1-way; suppress auto-generated return date")):
     # Minimal wrapper: only uses origin/destination/date; relies on existing EFS caching logic.
     client = _get_efs_client()
     def run_search():
         kwargs = dict(departure_id=origin.upper(), arrival_id=destination.upper(), outbound_date=date, travel_class=int(travel_class))
-        if return_date:
+        if one_way:
+            kwargs['one_way'] = True
+        elif return_date:
             kwargs['return_date'] = return_date
         return client.search_flights(**kwargs)
     result = await run_in_threadpool(run_search)
