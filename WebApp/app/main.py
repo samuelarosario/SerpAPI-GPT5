@@ -1372,6 +1372,26 @@ async def airports_by_codes(codes: str = Query(..., description="Comma-separated
     return JSONResponse(out)
 
 
+@app.get("/api/airports/all", response_class=JSONResponse, tags=["airports"])
+async def airports_all():
+    """Return a minimal list of all airports for client-side caching/filtering.
+
+    Columns: code, name, country, country_code, city
+    """
+    sql = text(
+        """
+        SELECT airport_code AS code, airport_name AS name, country, country_code, city
+        FROM airports
+        ORDER BY airport_code ASC
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql).mappings().fetchall()
+        out = [dict(r) for r in rows]
+    # Note: This endpoint is intentionally unauthenticated and can be cached client-side per session.
+    return JSONResponse(out)
+
+
 @app.get("/api/airlines/by_codes", response_class=JSONResponse, tags=["airlines"])
 async def airlines_by_codes(codes: str = Query(..., description="Comma-separated airline IATA/ICAO codes (2-3 chars)")):
     # Normalize codes to upper and unique

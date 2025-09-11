@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useMemo, useState, useRef, memo, forwardRef, useImperativeHandle } from 'react';
 import Login from './Login';
 
 function useAuthToken() {
@@ -79,11 +79,265 @@ function sortFlightsByStops(list: any[]){
 
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate()+1); return ymd(d); };
 
+type AirlineMetaMap = Record<string, { code: string; name: string }>;
+type AirportMetaMap = Record<string, { code: string; name?: string; country?: string; country_code?: string; city?: string }>;
+
+const ItineraryCard = memo(function ItineraryCard({ f, tclass, airlineMeta, airportMeta }: { f: any; tclass: string; airlineMeta: AirlineMetaMap; airportMeta: AirportMetaMap; }){
+  const s = summarizeFlight(f);
+  const segs: any[] = Array.isArray(f?.flights) ? f.flights : [];
+  const layovers: any[] = Array.isArray(f?.layovers) ? f.layovers : [];
+  const travelClassMap: Record<string,string> = { '1':'Economy', '2':'Premium Economy', '3':'Business', '4':'First' };
+  const cls = travelClassMap[tclass] ?? 'Economy';
+  const priceText = formatUSD(f?.price ?? s.price);
+  const [showData, setShowData] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  const rowStyle: React.CSSProperties = { display:'grid', gridTemplateColumns:'16px 1fr', gap:12, alignItems:'start' };
+  const dot: React.CSSProperties = { width:8, height:8, borderRadius:999, background:'#9aa0a6', marginTop:6 };
+  const pipe: React.CSSProperties = { borderLeft:'2px dotted #d1d5db', marginLeft:3, paddingLeft:0, height:'100%' };
+  const small: React.CSSProperties = { fontSize:12, color:'#5f6368' };
+  const strong: React.CSSProperties = { fontWeight:600 };
+
+  return (
+    <details ref={detailsRef} style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#0f172a0a'}}>
+      <summary style={{display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', listStyle:'none'}}>
+        <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
+          <span style={{fontWeight:600}}>{s.route}</span>
+          <span style={{...small}}>• {s.stops} stops • {s.duration}</span>
+          {f?.eco_note && (
+            <span style={{display:'inline-block', background:'#DCFCE7', color:'#166534', border:'1px solid #86EFAC', borderRadius:6, padding:'2px 8px', fontSize:12}}>
+              {String(f.eco_note)}
+            </span>
+          )}
+        </div>
+        <div style={{display:'flex', alignItems:'center', gap:10}}>
+          <button type="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setShowData(v=>{ const nv=!v; if(nv && detailsRef.current){ detailsRef.current.open = true; } return nv; }); }}
+            style={{fontSize:11, padding:'2px 8px', border:'1px solid #d1d5db', borderRadius:999, background:'#fff', color:'#475569', cursor:'pointer'}}>
+            {showData? 'Hide data' : 'Data info'}
+          </button>
+          <div style={{fontSize:16, fontWeight:700}}>{priceText}</div>
+        </div>
+      </summary>
+      <div style={{marginTop:12, display:'grid', gridTemplateColumns:'auto 1fr', gap:0}}>
+        <div style={{gridColumn:'1 / span 1'}}></div>
+        <div style={{gridColumn:'2 / span 1'}}></div>
+        <div style={{gridColumn:'1 / span 1', ...pipe}}></div>
+        <div style={{gridColumn:'2 / span 1'}}>
+          {/* Segments timeline */}
+          {segs.length === 0 ? (
+            <div style={{...small}}>No segment details available.</div>
+          ) : (
+            <div style={{display:'flex', flexDirection:'column', gap:10}}>
+              {segs.map((seg:any, i:number) => {
+                const depCode = seg?.departure_airport?.id || '';
+                const arrCode = seg?.arrival_airport?.id || '';
+                const depName = seg?.departure_airport?.name || depCode;
+                const arrName = seg?.arrival_airport?.name || arrCode;
+                const alCode = String(seg?.airline_code || '').toUpperCase();
+                const derivedCode = (() => { const s=String(seg?.flight_number||'').toUpperCase(); const m=s.match(/^([A-Z0-9]{2,3})\s*#?\s*\d/); return m? m[1] : ''; })();
+                const codeFromAirlineField = (() => { const a = String(seg?.airline||'').toUpperCase().trim(); return /^[A-Z0-9]{2,3}$/.test(a) ? a : ''; })();
+                const prefCode = (alCode || derivedCode || codeFromAirlineField);
+                const metaName = prefCode ? airlineMeta[prefCode]?.name : undefined;
+                let airlineName = (seg?.airline_name || seg?.airline || '').toString();
+                if ((!airlineName || /^[A-Z0-9]{2,3}$/.test(airlineName)) && metaName) {
+                  airlineName = String(metaName);
+                } else if (!airlineName && prefCode) {
+                  airlineName = prefCode; // final fallback to code
+                }
+                const fnum = seg?.flight_number || '';
+                const aircraft = seg?.aircraft || '';
+                const depT = fmtHM(seg?.departure_time);
+                const arrT = fmtHM(seg?.arrival_time);
+                const dur = fmtDuration(Number(seg?.duration));
+                const lay = layovers[i]; // layover after this segment
+                const layDurMin = Number(lay?.duration) || 0;
+                const isShortLayover = layDurMin > 0 && layDurMin < 120; // < 2 hours
+                const layCode = String(lay?.id || arrCode || '').toUpperCase();
+                const layMeta = layCode ? airportMeta[layCode] : undefined;
+                const layLabel = layMeta?.country ? `${layMeta.country} (${layCode})` : (lay?.name || lay?.id || (arrName + ' (' + arrCode + ')'));
+                const noticeStyle: React.CSSProperties = isShortLayover
+                  ? { background:'#FEE2E2', border:'1px solid #FCA5A5', color:'#991B1B', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' }
+                  : { background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' };
+                return (
+                  <div key={i}>
+                    <div style={rowStyle}>
+                      <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
+                        <div style={dot}></div>
+                      </div>
+                      <div>
+                        <div style={{display:'flex', justifyContent:'space-between', gap:8}}>
+                          <div>
+                            <div style={strong}>{depT} • {depName} ({depCode})</div>
+                            <div style={small}>Travel time: {dur}</div>
+                          </div>
+                          <div style={{textAlign:'right'}}>
+                            <div style={strong}>{arrT} • {arrName} ({arrCode})</div>
+                          </div>
+                        </div>
+                        <div style={{...small, marginTop:4}}>
+                          {[airlineName, cls, aircraft].filter(Boolean).join(' • ')}{fnum? ` • ${airlineName ? '' : 'Flight '}${String(fnum).replace(/^#\s*/, '')}`:''}
+                        </div>
+                      </div>
+                    </div>
+                    {lay && (
+                      <div style={{margin:'10px 0 0 0'}}>
+                        <div style={rowStyle}>
+                          <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
+                            <div style={{width:8, height:8}}></div>
+                          </div>
+                          <div>
+                            <div style={noticeStyle}>
+                              <div style={{fontSize:13}}>
+                                <span style={{fontWeight:700}}>{fmtDuration(Number(lay?.duration))} layover</span>
+                                {` • ${layLabel}`}
+                              </div>
+                              {isShortLayover ? (
+                                <div style={{display:'flex', alignItems:'center', gap:6, color:'#991B1B', fontWeight:700}} title="Short layover">
+                                  <span aria-hidden>⚠️</span>
+                                  <span>Short layover — you could miss the next flight</span>
+                                </div>
+                              ) : (lay?.overnight && (
+                                <div style={{display:'flex', alignItems:'center', gap:6, color:'#B91C1C', fontWeight:700}} title="Overnight layover">
+                                  <span aria-hidden>⚠️</span>
+                                  <span>Overnight</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Data info section */}
+          {showData && (
+            <div style={{marginTop:12, border:'1px dashed #cbd5e1', background:'#f8fafc', borderRadius:8, padding:10}}>
+              <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
+                <strong>Used fields (per segment):</strong> departure_airport.id, departure_airport.name, arrival_airport.id, arrival_airport.name, departure_time, arrival_time, airline_name, flight_number, aircraft, duration
+              </div>
+              <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
+                <strong>Used fields (flight-level):</strong> price, total_duration, flights[], layovers[]
+              </div>
+              <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                {segs.map((seg:any, i:number) => {
+                  const topKeys = Object.keys(seg || {}).sort();
+                  const depKeys = seg?.departure_airport && typeof seg.departure_airport === 'object' ? Object.keys(seg.departure_airport).sort() : [];
+                  const arrKeys = seg?.arrival_airport && typeof seg.arrival_airport === 'object' ? Object.keys(seg.arrival_airport).sort() : [];
+                  return (
+                    <div key={'k'+i} style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
+                      <div style={{fontWeight:600, marginBottom:4}}>Segment {i+1}: {seg?.departure_airport?.id || '?'} → {seg?.arrival_airport?.id || '?'}</div>
+                      <div><span style={{color:'#475569'}}>Top-level keys:</span> {topKeys.join(', ') || '—'}</div>
+                      <div><span style={{color:'#475569'}}>departure_airport keys:</span> {depKeys.join(', ') || '—'}</div>
+                      <div><span style={{color:'#475569'}}>arrival_airport keys:</span> {arrKeys.join(', ') || '—'}</div>
+                    </div>
+                  );
+                })}
+                {layovers.length > 0 && (
+                  <div style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
+                    <div style={{fontWeight:600, marginBottom:4}}>Layovers</div>
+                    {layovers.map((lv:any, i:number) => (
+                      <div key={'l'+i} style={{marginBottom:4}}>
+                        <span style={{color:'#475569'}}>Layover {i+1} keys:</span> {Object.keys(lv||{}).sort().join(', ') || '—'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+});
+
+// Module-level helper: authFetch reads token from localStorage (no App closure needed)
+async function authFetch(path: string, opts?: { allowNoAuth?: boolean }) {
+  const tok = localStorage.getItem('access_token');
+  const headers: Record<string,string> = {};
+  if (tok) headers.Authorization = `Bearer ${tok}`;
+  else if (!opts?.allowNoAuth) throw new Error('Not authenticated');
+  const r = await fetch(path, { headers });
+  return r;
+}
+
+// Shared type for airport input ref
+type AirportInputRef = { getValue: () => string; setValue: (v: string) => void; focus: () => void };
+
+// Native datalist-based airport input (module-scoped to avoid remounts)
+const AirportSuggestInput = forwardRef<AirportInputRef, {
+  placeholder: string;
+  style?: React.CSSProperties;
+  airportsReady: boolean;
+  airportList: Array<{code:string; name?:string; city?:string; country?:string; country_code?:string}>;
+}>(function AirportSuggestInput({ placeholder, style, airportsReady, airportList }, ref){
+  const [value, setValue] = useState('');
+  const [items, setItems] = useState<Array<{code:string; name?:string; city?:string; country?:string}>>([]);
+  const timerRef = useRef<number | null>(null);
+  const listIdRef = useRef<string>(`ap-list-${Math.random().toString(36).slice(2)}`);
+  const listId = listIdRef.current;
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    getValue: () => value,
+    setValue: (v: string) => setValue(v ?? ''),
+    focus: () => { inputRef.current?.focus(); }
+  }), [value]);
+
+  useEffect(() => {
+    if(timerRef.current){ window.clearTimeout(timerRef.current); timerRef.current = null; }
+    const q = (value||'').trim();
+    if(!q || q.length < 2){ setItems([]); return; }
+    timerRef.current = window.setTimeout(async () => {
+      const qq = q.toLowerCase();
+      if(airportsReady && airportList.length){
+        const res = airportList.filter(a => {
+          const code = (a.code||'').toLowerCase();
+          const name = (a.name||'').toLowerCase();
+          const city = (a.city||'').toLowerCase();
+          const country = (a.country||'').toLowerCase();
+          return code.includes(qq) || name.includes(qq) || city.includes(qq) || country.includes(qq);
+        }).slice(0, 10);
+        setItems(res);
+        return;
+      }
+      // Fallback to server suggest if list not ready
+      try{
+        const r = await authFetch(`/api/airports/suggest?q=${encodeURIComponent(q)}&limit=10`, { allowNoAuth: true });
+        const j = await r.json();
+        if(Array.isArray(j)) setItems(j); else setItems([]);
+      }catch{
+        try{ const r2 = await fetch(`/api/airports/suggest?q=${encodeURIComponent(q)}&limit=10`); const j2 = await r2.json(); setItems(Array.isArray(j2)? j2 : []); }catch{ setItems([]); }
+      }
+    }, 150) as unknown as number;
+  }, [value, airportsReady, airportList]);
+
+  const onInput = (e: React.ChangeEvent<HTMLInputElement>) => { setValue(e.target.value); };
+  const onOptionSelect = (e: React.ChangeEvent<HTMLInputElement>) => { setValue(e.target.value); };
+
+  return (
+    <div style={{ position:'relative', ...style }}>
+      <input ref={inputRef} list={listId} placeholder={placeholder} value={value} onChange={onInput} onInput={onOptionSelect} style={{ width:'100%' }} />
+      <datalist id={listId}>
+        {items.map((it, i) => {
+          const label = `${(it.code||'').toUpperCase()} — ${it.name||''}${it.city?` (${it.city})`:''}${it.country?`, ${it.country}`:''}`;
+          return <option key={it.code+String(i)} value={(it.code||'').toUpperCase()} label={label} />;
+        })}
+      </datalist>
+    </div>
+  );
+});
+
 export default function App() {
   const token = useAuthToken();
   const [authed, setAuthed] = useState<boolean | null>(null);
-  const [origin, setOrigin] = useState('');
-  const [dest, setDest] = useState('');
+  // Criteria values captured on search submit (avoid re-render on each keystroke)
+  const [criteriaOrigin, setCriteriaOrigin] = useState('');
+  const [criteriaDest, setCriteriaDest] = useState('');
   const [date, setDate] = useState(tomorrow());
   const [ret, setRet] = useState('');
   const [trip, setTrip] = useState<'round'|'oneway'>('round');
@@ -95,9 +349,35 @@ export default function App() {
   const [meta, setMeta] = useState<{ out?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number }; in?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number } }>({});
   const [airportMeta, setAirportMeta] = useState<Record<string, { code: string; name?: string; country?: string; country_code?: string; city?: string }>>({});
   const [airlineMeta, setAirlineMeta] = useState<Record<string, { code: string; name: string }>>({});
+  // Preload airports once per session
+  const [airportList, setAirportList] = useState<Array<{code:string; name?:string; city?:string; country?:string; country_code?:string}>>([]);
+  const [airportsReady, setAirportsReady] = useState(false);
   const minRet = useMemo(() => date ? addDays(date, 1) : '', [date]);
   // Outbound must be at least +1 day from today
   const minOut = useMemo(() => tomorrow(), []);
+
+  // Session-level airport cache (preloaded on first mount)
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await authFetch('/api/airports/all', { allowNoAuth: true });
+        const data = await resp.json();
+        if(!cancelled && Array.isArray(data)) { setAirportList(data); setAirportsReady(true); }
+      } catch {
+        try {
+          const r2 = await fetch('/api/airports/all');
+          const d2 = await r2.json();
+          if(!cancelled && Array.isArray(d2)) { setAirportList(d2); setAirportsReady(true); }
+        } catch { if(!cancelled) setAirportsReady(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Native datalist-based airport input (like V2)
+  const originRef = useRef<AirportInputRef | null>(null);
+  const destRef = useRef<AirportInputRef | null>(null);
 
   useEffect(() => { if(trip === 'oneway') setRet(''); }, [trip]);
   // Auto-correct outbound date if user tries to set earlier than allowed
@@ -112,178 +392,7 @@ export default function App() {
       } catch { setAuthed(false); }
     })();
   }, [token]);
-  function ItineraryCard({ f }: { f: any }) {
-    const s = summarizeFlight(f);
-    const segs: any[] = Array.isArray(f?.flights) ? f.flights : [];
-    const layovers: any[] = Array.isArray(f?.layovers) ? f.layovers : [];
-    const travelClassMap: Record<string,string> = { '1':'Economy', '2':'Premium Economy', '3':'Business', '4':'First' };
-    const cls = travelClassMap[tclass] ?? 'Economy';
-  const priceText = formatUSD(f?.price ?? s.price);
-  const [showData, setShowData] = useState(false);
-  const detailsRef = useRef<HTMLDetailsElement | null>(null);
-
-    const rowStyle: React.CSSProperties = { display:'grid', gridTemplateColumns:'16px 1fr', gap:12, alignItems:'start' };
-    const dot: React.CSSProperties = { width:8, height:8, borderRadius:999, background:'#9aa0a6', marginTop:6 };
-    const pipe: React.CSSProperties = { borderLeft:'2px dotted #d1d5db', marginLeft:3, paddingLeft:0, height:'100%' };
-    const small: React.CSSProperties = { fontSize:12, color:'#5f6368' };
-    const strong: React.CSSProperties = { fontWeight:600 };
-
-    return (
-      <details ref={detailsRef} style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#0f172a0a'}}>
-        <summary style={{display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', listStyle:'none'}}>
-          <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
-            <span style={{fontWeight:600}}>{s.route}</span>
-            <span style={{...small}}>• {s.stops} stops • {s.duration}</span>
-            {f?.eco_note && (
-              <span style={{display:'inline-block', background:'#DCFCE7', color:'#166534', border:'1px solid #86EFAC', borderRadius:6, padding:'2px 8px', fontSize:12}}>
-                {String(f.eco_note)}
-              </span>
-            )}
-          </div>
-          <div style={{display:'flex', alignItems:'center', gap:10}}>
-            <button type="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setShowData(v=>{ const nv=!v; if(nv && detailsRef.current){ detailsRef.current.open = true; } return nv; }); }}
-              style={{fontSize:11, padding:'2px 8px', border:'1px solid #d1d5db', borderRadius:999, background:'#fff', color:'#475569', cursor:'pointer'}}>
-              {showData? 'Hide data' : 'Data info'}
-            </button>
-            <div style={{fontSize:16, fontWeight:700}}>{priceText}</div>
-          </div>
-        </summary>
-        <div style={{marginTop:12, display:'grid', gridTemplateColumns:'auto 1fr', gap:0}}>
-          <div style={{gridColumn:'1 / span 1'}}></div>
-          <div style={{gridColumn:'2 / span 1'}}></div>
-          <div style={{gridColumn:'1 / span 1', ...pipe}}></div>
-          <div style={{gridColumn:'2 / span 1'}}>
-            {/* Segments timeline */}
-            {segs.length === 0 ? (
-              <div style={{...small}}>No segment details available.</div>
-            ) : (
-              <div style={{display:'flex', flexDirection:'column', gap:10}}>
-                {segs.map((seg:any, i:number) => {
-                  const depCode = seg?.departure_airport?.id || '';
-                  const arrCode = seg?.arrival_airport?.id || '';
-                  const depName = seg?.departure_airport?.name || depCode;
-                  const arrName = seg?.arrival_airport?.name || arrCode;
-                  const alCode = String(seg?.airline_code || '').toUpperCase();
-                  const derivedCode = (() => { const s=String(seg?.flight_number||'').toUpperCase(); const m=s.match(/^([A-Z0-9]{2,3})\s*#?\s*\d/); return m? m[1] : ''; })();
-                  const codeFromAirlineField = (() => { const a = String(seg?.airline||'').toUpperCase().trim(); return /^[A-Z0-9]{2,3}$/.test(a) ? a : ''; })();
-                  const prefCode = (alCode || derivedCode || codeFromAirlineField);
-                  const metaName = prefCode ? airlineMeta[prefCode]?.name : undefined;
-                  let airlineName = (seg?.airline_name || seg?.airline || '').toString();
-                  if ((!airlineName || /^[A-Z0-9]{2,3}$/.test(airlineName)) && metaName) {
-                    airlineName = String(metaName);
-                  } else if (!airlineName && prefCode) {
-                    airlineName = prefCode; // final fallback to code
-                  }
-                  const fnum = seg?.flight_number || '';
-                  const aircraft = seg?.aircraft || '';
-                  const depT = fmtHM(seg?.departure_time);
-                  const arrT = fmtHM(seg?.arrival_time);
-                  const dur = fmtDuration(Number(seg?.duration));
-                  const lay = layovers[i]; // layover after this segment (i -> between i and i+1)
-                  const layDurMin = Number(lay?.duration) || 0;
-                  const isShortLayover = layDurMin > 0 && layDurMin < 120; // < 2 hours
-                  const layCode = String(lay?.id || arrCode || '').toUpperCase();
-                  const layMeta = layCode ? airportMeta[layCode] : undefined;
-                  const layLabel = layMeta?.country ? `${layMeta.country} (${layCode})` : (lay?.name || lay?.id || (arrName + ' (' + arrCode + ')'));
-                  const noticeStyle: React.CSSProperties = isShortLayover
-                    ? { background:'#FEE2E2', border:'1px solid #FCA5A5', color:'#991B1B', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' }
-                    : { background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' };
-                  return (
-                    <div key={i}>
-                      <div style={rowStyle}>
-                        <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
-                          <div style={dot}></div>
-                        </div>
-                        <div>
-                          <div style={{display:'flex', justifyContent:'space-between', gap:8}}>
-                            <div>
-                              <div style={strong}>{depT} • {depName} ({depCode})</div>
-                              <div style={small}>Travel time: {dur}</div>
-                            </div>
-                            <div style={{textAlign:'right'}}>
-                              <div style={strong}>{arrT} • {arrName} ({arrCode})</div>
-                            </div>
-                          </div>
-                          <div style={{...small, marginTop:4}}>
-                            {[airlineName, cls, aircraft].filter(Boolean).join(' • ')}{fnum? ` • ${airlineName ? '' : 'Flight '}${String(fnum).replace(/^#\s*/, '')}`:''}
-                          </div>
-                        </div>
-                      </div>
-                      {lay && (
-                        <div style={{margin:'10px 0 0 0'}}>
-                          <div style={rowStyle}>
-                            <div style={{display:'flex', flexDirection:'column', alignItems:'center'}}>
-                              <div style={{width:8, height:8}}></div>
-                            </div>
-                            <div>
-                              <div style={noticeStyle}>
-                                <div style={{fontSize:13}}>
-                                  <span style={{fontWeight:700}}>{fmtDuration(Number(lay?.duration))} layover</span>
-                                  {` • ${layLabel}`}
-                                </div>
-                                {isShortLayover ? (
-                                  <div style={{display:'flex', alignItems:'center', gap:6, color:'#991B1B', fontWeight:700}} title="Short layover">
-                                    <span aria-hidden>⚠️</span>
-                                    <span>Short layover — you could miss the next flight</span>
-                                  </div>
-                                ) : (lay?.overnight && (
-                                  <div style={{display:'flex', alignItems:'center', gap:6, color:'#B91C1C', fontWeight:700}} title="Overnight layover">
-                                    <span aria-hidden>⚠️</span>
-                                    <span>Overnight</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* Data info section: which elements are fetched */}
-            {showData && (
-              <div style={{marginTop:12, border:'1px dashed #cbd5e1', background:'#f8fafc', borderRadius:8, padding:10}}>
-                <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
-                  <strong>Used fields (per segment):</strong> departure_airport.id, departure_airport.name, arrival_airport.id, arrival_airport.name, departure_time, arrival_time, airline_name, flight_number, aircraft, duration
-                </div>
-                <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
-                  <strong>Used fields (flight-level):</strong> price, total_duration, flights[], layovers[]
-                </div>
-                <div style={{display:'flex', flexDirection:'column', gap:8}}>
-                  {segs.map((seg:any, i:number) => {
-                    const topKeys = Object.keys(seg || {}).sort();
-                    const depKeys = seg?.departure_airport && typeof seg.departure_airport === 'object' ? Object.keys(seg.departure_airport).sort() : [];
-                    const arrKeys = seg?.arrival_airport && typeof seg.arrival_airport === 'object' ? Object.keys(seg.arrival_airport).sort() : [];
-                    return (
-                      <div key={'k'+i} style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
-                        <div style={{fontWeight:600, marginBottom:4}}>Segment {i+1}: {seg?.departure_airport?.id || '?'} → {seg?.arrival_airport?.id || '?'}</div>
-                        <div><span style={{color:'#475569'}}>Top-level keys:</span> {topKeys.join(', ') || '—'}</div>
-                        <div><span style={{color:'#475569'}}>departure_airport keys:</span> {depKeys.join(', ') || '—'}</div>
-                        <div><span style={{color:'#475569'}}>arrival_airport keys:</span> {arrKeys.join(', ') || '—'}</div>
-                      </div>
-                    );
-                  })}
-                  {layovers.length > 0 && (
-                    <div style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
-                      <div style={{fontWeight:600, marginBottom:4}}>Layovers</div>
-                      {layovers.map((lv:any, i:number) => (
-                        <div key={'l'+i} style={{marginBottom:4}}>
-                          <span style={{color:'#475569'}}>Layover {i+1} keys:</span> {Object.keys(lv||{}).sort().join(', ') || '—'}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </details>
-    );
-  }
+  
 
   
 
@@ -350,10 +459,14 @@ export default function App() {
     }
   }
 
+  // keep values when switching dates or trip type
+
   async function search() {
     setError(null);
-    if(!origin || !dest || !date) { setError('All fields are required.'); return; }
-    if(!isIata(origin) || !isIata(dest)) { setError('Use 3-letter IATA codes for origin/destination.'); return; }
+    const O = (originRef.current?.getValue() || '').trim().toUpperCase();
+    const D = (destRef.current?.getValue() || '').trim().toUpperCase();
+    if(!O || !D || !date) { setError('All fields are required.'); return; }
+    if(!isIata(O) || !isIata(D)) { setError('Use 3-letter IATA codes for origin/destination (select from suggestions).'); return; }
     const df = daysFromToday(date); if(df==null || df < 1){ setError('Outbound must be at least 1 day from today.'); return; }
     if(trip !== 'oneway'){
       if(!ret){ setError('Return date is required for 2-way.'); return; }
@@ -361,7 +474,8 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const q1 = `/api/flight_search?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
+  setCriteriaOrigin(O); setCriteriaDest(D);
+  const q1 = `/api/flight_search?origin=${encodeURIComponent(O)}&destination=${encodeURIComponent(D)}&date=${encodeURIComponent(date)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
       const r1 = await authFetch(q1); const j1 = await r1.json();
       if(!j1?.success){ setError(j1?.error||'Search failed'); setBusy(false); return; }
   const outBest = Array.isArray(j1?.data?.best_flights)? j1.data.best_flights : [];
@@ -413,7 +527,7 @@ export default function App() {
       let codesToFetch = collectAirportCodes(out);
       let airlineCodes = collectAirlineCodes(out);
       if(trip !== 'oneway' && ret){
-        const q2 = `/api/flight_search?origin=${encodeURIComponent(dest)}&destination=${encodeURIComponent(origin)}&date=${encodeURIComponent(ret)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
+        const q2 = `/api/flight_search?origin=${encodeURIComponent(D)}&destination=${encodeURIComponent(O)}&date=${encodeURIComponent(ret)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
         const r2 = await authFetch(q2); const j2 = await r2.json();
         if(!j2?.success){ setError(j2?.error||'Inbound failed'); setBusy(false); return; }
   const inBest = Array.isArray(j2?.data?.best_flights)? j2.data.best_flights : [];
@@ -451,11 +565,11 @@ export default function App() {
   return (
     <div style={{fontFamily:'Inter, system-ui, sans-serif', padding:16}}>
       <h2>SerpFlights (React) <span style={{fontSize:12, padding:'2px 6px', border:'1px solid #ddd', borderRadius:4, marginLeft:8}}>V2</span></h2>
-      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center'}}>
-        <input placeholder="Origin (IATA)" value={origin} onChange={e=>setOrigin(e.target.value.toUpperCase())} maxLength={3} style={{width:140}} />
-        <input placeholder="Destination (IATA)" value={dest} onChange={e=>setDest(e.target.value.toUpperCase())} maxLength={3} style={{width:160}} />
-  <input type="date" value={date} onChange={e=>setDate(e.target.value)} min={minOut} />
-        <input type="date" value={ret} onChange={e=>setRet(e.target.value)} min={minRet} disabled={trip==='oneway'} />
+      <div style={{display:'flex', gap:12, rowGap:8, flexWrap:'wrap', alignItems:'flex-end'}}>
+        <AirportSuggestInput ref={originRef} placeholder="Origin (code, name, city, country)" style={{ width: 260, flex: '0 0 260px' }} airportsReady={airportsReady} airportList={airportList} />
+        <AirportSuggestInput ref={destRef} placeholder="Destination (code, name, city, country)" style={{ width: 280, flex: '0 0 280px' }} airportsReady={airportsReady} airportList={airportList} />
+        <input type="date" value={date} onChange={e=>setDate(e.target.value)} min={minOut} style={{ minWidth: 160, flex: '0 0 auto' }} />
+        <input type="date" value={ret} onChange={e=>setRet(e.target.value)} min={minRet} disabled={trip==='oneway'} style={{ minWidth: 160, flex: '0 0 auto' }} />
         <select value={trip} onChange={e=>setTrip(e.target.value as any)}>
           <option value="round">2-way</option>
           <option value="oneway">1-way</option>
@@ -473,7 +587,7 @@ export default function App() {
       {(meta.out || meta.in) && (
         <div style={{marginTop:12, border:'1px solid #e5e7eb', background:'#f8fafc', borderRadius:8, padding:10, color:'#334155'}}>
           <div style={{fontSize:13, marginBottom:6}}>
-            <strong>Criteria:</strong> {origin||'—'} → {dest||'—'} on {date||'—'}{trip!=='oneway' && ret? ` • return ${ret}`:''} • class {({ '1':'Economy','2':'Premium Economy','3':'Business','4':'First' } as any)[tclass] || 'Economy'}
+            <strong>Criteria:</strong> {criteriaOrigin||'—'} → {criteriaDest||'—'} on {date||'—'}{trip!=='oneway' && ret? ` • return ${ret}`:''} • class {({ '1':'Economy','2':'Premium Economy','3':'Business','4':'First' } as any)[tclass] || 'Economy'}
           </div>
           {meta.out && (
             <div style={{fontSize:12, marginBottom:4}}>
@@ -498,7 +612,7 @@ export default function App() {
             )}
           </h3>
           {outbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : outbound.slice(0,20).map((f,i)=> (
-            <ItineraryCard key={i} f={f} />
+            <ItineraryCard key={i} f={f} tclass={tclass} airlineMeta={airlineMeta} airportMeta={airportMeta} />
           ))}
         </div>
         <div style={{flex:1}}>
@@ -511,7 +625,7 @@ export default function App() {
             )}
           </h3>
           {inbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : inbound.slice(0,20).map((f,i)=> (
-            <ItineraryCard key={i} f={f} />
+            <ItineraryCard key={i} f={f} tclass={tclass} airlineMeta={airlineMeta} airportMeta={airportMeta} />
           ))}
         </div>
       </div>
