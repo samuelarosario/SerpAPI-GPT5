@@ -64,34 +64,10 @@ app.include_router(auth_router)
 
 @app.get("/", response_class=HTMLResponse, tags=["ui"])
 async def root(request: Request):
-        # Minimal landing with a button to the Flight Search SPA mounted at /flight-search
-        return HTMLResponse("""<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Welcome</title>
-        <style>html,body{height:100%;margin:0}body{font-family:system-ui;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}</style>
-        </head><body>
-            <div style='position:absolute;top:12px;right:12px'>
-                <button id='logout' style='display:none;padding:.35rem .7rem;border:1px solid #0f172a;border-radius:6px;background:#fff;color:#0f172a;cursor:pointer'>Logout</button>
-            </div>
-            <div style='text-align:center'>
-                <h2 style='margin:0 0 1rem'>Welcome</h2>
-                <a href='/flight-search' style='display:inline-block;padding:.6rem 1rem;border:1px solid #0f172a;border-radius:8px;color:#0f172a;background:#fff;text-decoration:none'>Open Flight Search</a>
-            </div>
-            <script>
-                (function(){
-                    try{
-                        var t = localStorage.getItem('access_token');
-                        if(t){
-                            var btn = document.getElementById('logout');
-                            btn.style.display = 'inline-block';
-                            btn.addEventListener('click', async function(){
-                                try { await fetch('/auth/logout', { method:'POST', headers:{ Authorization: 'Bearer '+t } }); } catch(e){}
-                                try { localStorage.clear(); } catch(e){}
-                                location.reload();
-                            });
-                        }
-                    }catch(e){}
-                })();
-            </script>
-        </body></html>""")
+    # Serve React SPA for production landing if built; otherwise minimal fallback.
+    if REACT_DIST_ENABLED:
+        return HTMLResponse(_load_react_index())
+    return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Welcome</h3><p>React build not found. Run the dev server on port 9000 or build with <code>npm run build</code>.</p></body></html>")
 
 
 @app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
