@@ -64,10 +64,23 @@ app.include_router(auth_router)
 
 @app.get("/", response_class=HTMLResponse, tags=["ui"])
 async def root(request: Request):
-    # Prefer built React SPA if available; otherwise fall back to legacy minimal login template.
-    if REACT_DIST_ENABLED:
-        return HTMLResponse(_load_react_index())
-    return templates.TemplateResponse("login.html", {"request": request})
+        # Minimal landing with a button to the Flight Search SPA mounted at /flight-search
+        return HTMLResponse("""<!DOCTYPE html><html><head><meta charset='utf-8'/><title>Welcome</title>
+        <style>html,body{height:100%;margin:0}body{font-family:system-ui;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a}</style>
+        </head><body>
+            <div style='text-align:center'>
+                <h2 style='margin:0 0 1rem'>Welcome</h2>
+                <a href='/flight-search' style='display:inline-block;padding:.6rem 1rem;border:1px solid #0f172a;border-radius:8px;color:#0f172a;background:#fff;text-decoration:none'>Open Flight Search</a>
+            </div>
+        </body></html>""")
+
+
+@app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
+async def flight_search_ui():
+        # Serve the built React SPA at this path when available; otherwise show a simple message.
+        if REACT_DIST_ENABLED:
+                return HTMLResponse(_load_react_index())
+        return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Flight Search</h3><p>React build not found. Run the dev server on port 9000 or build with <code>npm run build</code>.</p></body></html>")
 
 
 
@@ -264,8 +277,13 @@ async def health() -> dict:
 # Final SPA fallback (must be last) so explicit routes (/health, /api, etc.) work.
 @app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
 async def spa_fallback(full_path: str, request: Request):
+    # Only serve the SPA index for paths under /flight-search (and not for api/auth/assets/etc.).
     if not REACT_DIST_ENABLED:
         raise HTTPException(status_code=404, detail="Not Found")
-    if not full_path or full_path.startswith(("api/", "auth/", "health", "assets/", "admin", "docs")) or '.' in full_path:
+    if not full_path or '.' in full_path:
         raise HTTPException(status_code=404, detail="Not Found")
-    return HTMLResponse(_load_react_index())
+    if full_path.startswith(("api/", "auth/", "health", "assets/", "admin", "docs")):
+        raise HTTPException(status_code=404, detail="Not Found")
+    if full_path.startswith("flight-search"):
+        return HTMLResponse(_load_react_index())
+    raise HTTPException(status_code=404, detail="Not Found")
