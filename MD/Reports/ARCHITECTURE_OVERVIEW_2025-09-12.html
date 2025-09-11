@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Architecture & Core Components - SerpAPI-GPT5 - 2025-09-12</title>
+<style>
+ body { font-family: system-ui, Arial, sans-serif; line-height: 1.45; margin: 2rem; color: #222; }
+ h1,h2,h3 { color:#14365d; }
+ code, pre { background:#f5f7fa; padding:2px 4px; border-radius:4px; font-size: 0.9rem; }
+ pre { padding:1rem; overflow:auto; }
+ .pill { display:inline-block; background:#14365d; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.65rem; letter-spacing:0.5px; }
+ .sec { margin-top:2.2rem; }
+ table { border-collapse: collapse; width:100%; margin: 1rem 0; }
+ th, td { border:1px solid #ccc; padding:6px 8px; text-align:left; font-size:0.85rem; }
+ th { background:#e9f0f7; }
+ .risk-low { color:#0a6b2b; font-weight:600; }
+ .risk-med { color:#a56900; font-weight:600; }
+ .risk-high { color:#b00020; font-weight:700; }
+ details { margin:0.5rem 0 1rem; }
+ summary { cursor:pointer; font-weight:600; }
+ .diagram { background:#fff; border:1px solid #d0d7de; padding:12px 14px; border-radius:6px; font-family: "SFMono-Regular",Consolas,monospace; font-size:13px; white-space:pre; overflow:auto; }
+ .tag { background:#eef3f8; border:1px solid #d0d7de; padding:2px 6px; font-size:0.65rem; border-radius:6px; margin-right:6px; display:inline-block; }
+ .good { color:#0a6b2b; }
+ .warn { color:#a56900; }
+ .bad { color:#b00020; }
+ .callout { border-left:4px solid #14365d; background:#f0f6fb; padding:0.75rem 1rem; margin:1.25rem 0; border-radius:4px; }
+ .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+ .card { border:1px solid #d0d7de; border-radius:6px; padding:0.85rem 0.9rem; background:#fff; }
+ .card h3 { margin-top:0; font-size:1rem; }
+ .badge { background:#14365d; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.6rem; }
+ .footer { margin-top:3rem; font-size:0.7rem; color:#666; }
+ ul { margin: .6rem 0 .6rem 1.3rem; }
+ ol { margin: .6rem 0 .6rem 1.3rem; }
+ .small { font-size:.85rem; color:#475569; }
+ .mono { font-family: "SFMono-Regular",Consolas,monospace; font-size: 0.9rem; }
+ .hr { border-top:1px solid #e5e7eb; margin:1.5rem 0; }
+ a { color:#134e9b; text-decoration:none; }
+ a:hover { text-decoration:underline; }
+ .kbd { border:1px solid #cbd5e1; background:#f8fafc; padding:1px 4px; border-radius:4px; font-size:.8rem; }
+ .two-col { display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+ @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+ </style>
+ </head>
+<body>
+<h1>Architecture &amp; Core Components <span class="pill">2025-09-12</span></h1>
+<p class="small">Repository: <code>SerpAPI-GPT5</code> • Branch: <code>master</code></p>
+
+<div class="callout"><strong>Summary:</strong> Cache-first flight search with full raw retention and normalized storage; FastAPI WebApp for API/Auth/UI; strict schema governance; lightweight metrics and structured JSONL logging. This report consolidates the architecture, flows, APIs, schema, and operations.</div>
+
+<h2>High-Level Architecture</h2>
+<pre class="diagram">```mermaid
+flowchart LR
+  subgraph Client
+    U[User]
+    SPA[React SPA (optional build)]
+  end
+
+  subgraph WebApp[FastAPI WebApp]
+    API[/APIs: /api/*, /auth/*, /health, /metrics/]
+    Auth[JWT Auth &amp; Users]
+    UI[SPA Hosting (optional)]
+  end
+
+  subgraph Core[Main Python Package]
+    EFS[EnhancedFlightSearchClient]
+    Cache[FlightSearchCache]
+    SAPI[SerpAPIFlightClient]
+    Svc1[InboundMergeStrategy]
+    Svc2[WeekRangeAggregator]
+    Persist[StructuredFlightWriter]
+    Valid[Validation &amp; RateLimiter]
+    Obs[Metrics + Structured Logging]
+  end
+
+  subgraph Data[SQLite DB + Files]
+    DB[(DB/Main_DB.db)]
+    Logs[/logs/*.jsonl, *.log/]
+  end
+
+  U -- HTTP --> API
+  SPA -- fetch --> API
+  UI -- serves --> U
+  API -- request --> EFS
+  EFS -- cache check --> Cache
+  EFS -- call if miss --> SAPI
+  EFS -- write structured --> Persist
+  Persist -- SQL --> DB
+  Cache -- SQL --> DB
+  SAPI -- store raw --> DB
+  EFS -- merge/aggregate --> Svc1 &amp; Svc2
+  EFS -- events/metrics --> Obs
+  WebApp -- logs --> Logs
+```</pre>
+
+<div class="sec">
+  <h2>Component Inventory</h2>
+  <div class="two-col">
+    <div class="card">
+      <h3>WebApp (FastAPI)</h3>
+      <ul>
+        <li>Entry: <code>WebApp/app/main.py</code></li>
+        <li>Auth: <code>/auth/*</code> (JWT), admin utilities, demo users for local test</li>
+        <li>API: <code>/api/flight_search</code>, airports/airlines lookups, <code>/health</code>, optional <code>/metrics</code></li>
+        <li>SPA Hosting: serves <code>react-frontend/dist</code> if present</li>
+        <li>Settings: <code>WEBAPP_ENABLE_METRICS</code>, <code>WEBAPP_JWT_SECRET</code></li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Core (Main)</h3>
+      <ul>
+        <li>Orchestrator: <code>Main/enhanced_flight_search.py</code></li>
+        <li>Cache: <code>Main/cache.py</code></li>
+        <li>External API: <code>Main/serpapi_client.py</code></li>
+        <li>Services: <code>Main/services/inbound_merge.py</code>, <code>week_aggregator.py</code></li>
+        <li>Persistence: <code>Main/persistence/structured_writer.py</code></li>
+        <li>Utils: validation, metrics, structured logging under <code>Main/core/</code></li>
+      </ul>
+    </div>
+  </div>
+  <div class="card" style="margin-top:1rem">
+    <h3>Data Layer (SQLite)</h3>
+    <ul>
+      <li>DB: <code>DB/Main_DB.db</code> (WAL enabled, tracked in Git by policy)</li>
+      <li>Snapshot: <code>DB/current_schema.sql</code> with checksum</li>
+      <li>Helper: <code>DB/database_helper.py</code> (versioning, drift, integrity, snapshot)</li>
+      <li>Policy: schema changes require owner approval; raw <code>api_queries</code> retained by default</li>
+    </ul>
+  </div>
+</div>
+
+<div class="sec">
+  <h2>Processing Flows</h2>
+  <h3>Flight Search (API → Storage)</h3>
+  <pre class="diagram">```mermaid
+sequenceDiagram
+  participant C as Client (/api/flight_search)
+  participant W as WebApp FastAPI
+  participant E as EnhancedFlightSearchClient
+  participant K as FlightSearchCache
+  participant A as SerpAPIFlightClient
+  participant D as SQLite DB
+
+  C-&gt;&gt;W: GET /api/flight_search?origin=...&amp;destination=...&amp;date=...
+  W-&gt;&gt;E: search_flights(params)
+  E-&gt;&gt;K: search_cache(params, 24h)
+  alt Cache Hit
+    K--&gt;&gt;E: structured cached view
+    E--&gt;&gt;W: {success, source: cache, data}
+    W--&gt;&gt;C: JSON response
+  else Cache Miss
+    E-&gt;&gt;A: search_round_trip / one_way
+    A--&gt;&gt;E: API result {success, data}
+    E-&gt;&gt;D: INSERT raw (api_queries)
+    E-&gt;&gt;E: Inbound merge if needed
+    E-&gt;&gt;D: StructuredFlightWriter.store(...)
+    E-&gt;&gt;K: search_cache(params)
+    E--&gt;&gt;W: {success, source: api, data}
+    W--&gt;&gt;C: JSON response
+  end
+```</pre>
+
+  <h3>Week Range Aggregation</h3>
+  <pre class="diagram">```mermaid
+flowchart TD
+  Start([start_date]) --&gt; ForEachDay{7 days}
+  ForEachDay --&gt; Call[Call EFS.search_flights]
+  Call --&gt; Accumulate[Aggregate daily results]
+  Accumulate --&gt; PriceTrend[Compute daily min/avg + trend]
+  PriceTrend --&gt; Summary[Build summary]
+  Summary --&gt; Return[{success, daily_results, best_week_flights, price_trend, summary}]
+```</pre>
+
+  <h3>Inbound Merge (Return Fallback)</h3>
+  <pre class="diagram">```mermaid
+flowchart LR
+  Check{Inbound present?}
+  Check --&gt;|Yes| Done[Return api_data]
+  Check --&gt;|No| Fetch[One-way reverse search]
+  Fetch --&gt; Merge[Tag + append inbound flights]
+  Merge --&gt; Done
+```</pre>
+</div>
+
+<div class="sec">
+  <h2>API Surface</h2>
+  <ul>
+    <li>UI: <code>/</code>, <code>/flight-search</code>, <code>/dashboard</code>, <code>/admin</code></li>
+    <li>Flight: <code>/api/flight_search</code> (origin, destination, date, optional return_date, travel_class, one_way)</li>
+    <li>Airports: <code>/api/airports/suggest</code>, <code>/api/airports/by_code</code>, <code>/api/airports/by_codes</code>, <code>/api/airports/all</code></li>
+    <li>Airlines: <code>/api/airlines/by_codes</code></li>
+    <li>System: <code>/health</code>, <code>/metrics</code> (JSON snapshot; gated by <code>WEBAPP_ENABLE_METRICS</code>)</li>
+    <li>Auth: <code>/auth/register</code>, <code>/auth/login</code>, <code>/auth/refresh</code>, <code>/auth/me</code>, admin user ops</li>
+  </ul>
+</div>
+
+<div class="sec">
+  <h2>Data Model (SQLite)</h2>
+  <p>Canonical snapshot: <code>DB/current_schema.sql</code> with checksum. Core entities below.</p>
+  <pre class="diagram">```mermaid
+erDiagram
+  AIRPORTS {
+    TEXT airport_code PK
+    TEXT airport_name
+    TEXT city
+    TEXT country
+    TEXT country_code
+    TEXT timezone
+  }
+  AIRLINES {
+    TEXT airline_code PK
+    TEXT airline_name
+    TEXT logo_url
+  }
+  API_QUERIES {
+    INTEGER id PK
+    TEXT query_parameters
+    TEXT raw_response
+    TEXT query_type
+    INTEGER status_code
+    TEXT api_endpoint
+    TEXT search_term
+    DATETIME created_at
+  }
+  FLIGHT_SEARCHES {
+    INTEGER id PK
+    TEXT search_id UK
+    TEXT departure_airport_code FK
+    TEXT arrival_airport_code FK
+    TEXT outbound_date
+    TEXT return_date
+    INTEGER flight_type
+    TEXT currency
+    TEXT raw_parameters
+    TEXT cache_key
+    INTEGER api_query_id FK
+    DATETIME created_at
+  }
+  FLIGHT_RESULTS {
+    INTEGER id PK
+    TEXT search_id FK
+    TEXT result_type
+    INTEGER result_rank
+    INTEGER total_duration
+    INTEGER total_price
+    TEXT price_currency
+  }
+  FLIGHT_SEGMENTS {
+    INTEGER id PK
+    INTEGER flight_result_id FK
+    TEXT departure_airport_code FK
+    TEXT arrival_airport_code FK
+    TEXT airline_code FK
+    TEXT flight_number
+    TEXT departure_time
+    TEXT arrival_time
+  }
+  LAYOVERS {
+    INTEGER id PK
+    INTEGER flight_result_id FK
+    TEXT airport_code FK
+    INTEGER duration_minutes
+  }
+
+  AIRPORTS ||--o{ FLIGHT_SEGMENTS : departure
+  AIRPORTS ||--o{ FLIGHT_SEGMENTS : arrival
+  AIRLINES ||--o{ FLIGHT_SEGMENTS : operates
+  FLIGHT_SEARCHES ||--o{ FLIGHT_RESULTS : contains
+  FLIGHT_RESULTS ||--o{ FLIGHT_SEGMENTS : composed_of
+  FLIGHT_RESULTS ||--o{ LAYOVERS : has
+  API_QUERIES ||--o{ FLIGHT_SEARCHES : referenced_by
+```</pre>
+</div>
+
+<div class="sec">
+  <h2>Observability</h2>
+  <ul>
+    <li>Structured JSONL events in <code>Main/logs/flight_events.jsonl</code> (override via <code>FLIGHT_JSON_LOG</code>).</li>
+    <li>In-memory <code>METRICS</code>: <span class="mono">api_calls</span>, <span class="mono">api_failures</span>, <span class="mono">cache_hits/misses</span>, <span class="mono">retry_attempts</span>, latency buckets, <span class="mono">structured_storage_failures</span>.</li>
+    <li>WebApp <code>/metrics</code> returns JSON snapshot when enabled by env.</li>
+  </ul>
+</div>
+
+<div class="sec">
+  <h2>Security</h2>
+  <ul>
+    <li>Secrets from env: <code>SERPAPI_KEY</code>, <code>WEBAPP_JWT_SECRET</code>.</li>
+    <li>JWT: HS256; access 15m, refresh 7d; Argon2/bcrypt hashing.</li>
+    <li>Admin endpoints require JWT; demo users are for local/testing only.</li>
+  </ul>
+</div>
+
+<div class="sec">
+  <h2>Configuration</h2>
+  <ul>
+    <li><code>Main/config.py</code>: SerpAPI defaults, DB path, processing flags, rate limits, logging path.</li>
+    <li><code>WebApp/app/core/config.py</code>: JWT secret, token lifetimes, <code>WEBAPP_ENABLE_METRICS</code>.</li>
+    <li><code>.env</code> supported for local development.</li>
+  </ul>
+</div>
+
+<div class="sec">
+  <h2>Operations &amp; Deployment</h2>
+  <pre class="diagram"># Windows PowerShell
+# Activate
+. .\.venv\Scripts\Activate.ps1
+
+# Start WebApp (single port; kills existing listeners on :8000)
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-webapp.ps1
+
+# Stop
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/stop-webapp.ps1
+
+# Tests & Lint
+pytest -q
+ruff check .
+</pre>
+</div>
+
+<div class="sec">
+  <h2>Testing Summary</h2>
+  <ul>
+    <li>Pytest matrix in CI (3.11–3.13). Recent local: 50 passing tests including metrics endpoint.</li>
+    <li>DB integrity: <code>run_integrity_check()</code>, snapshot checksum, drift detection.</li>
+    <li>Coverage spans cache, writer, week aggregation, validation, retry paths.</li>
+  </ul>
+</div>
+
+<div class="sec">
+  <h2>Risks &amp; Tradeoffs</h2>
+  <table>
+    <tr><th>Area</th><th>Risk</th><th>Mitigation</th><th>Priority</th></tr>
+    <tr><td>Metrics export</td><td>Ephemeral in-process</td><td>Prometheus text endpoint behind flag</td><td class="risk-med">P1</td></tr>
+    <tr><td>Raw growth</td><td>Large JSON accumulation</td><td>Optional gzip + retention flags</td><td class="risk-med">P1-P2</td></tr>
+    <tr><td>SQLite scale</td><td>Write contention</td><td>Queue writes / migrate to Postgres if needed</td><td class="risk-low">P3</td></tr>
+    <tr><td>DB in Git</td><td>Repo bloat</td><td>Consider Git LFS for <code>*.db</code></td><td class="risk-low">P3</td></tr>
+  </table>
+</div>
+
+<div class="sec">
+  <h2>Roadmap</h2>
+  <ol>
+    <li>Prometheus-format metrics and basic histograms.</li>
+    <li>JWT/admin hardening; disable demo users outside test.</li>
+    <li>Raw archival/compaction strategy; optional gzip.</li>
+    <li>Incremental Ruff fixes; expand typing; add retry/jitter tests.</li>
+  </ol>
+</div>
+
+<div class="sec">
+  <h2>Appendix</h2>
+  <h3>Event &amp; Metric Taxonomy</h3>
+  <ul>
+    <li>Events: <span class="mono">efs.search.*</span>, <span class="mono">efs.cache.*</span>, <span class="mono">efs.api.*</span>, <span class="mono">efs.store.*</span>, <span class="mono">efs.inbound.*</span>, <span class="mono">efs.week.*</span></li>
+    <li>Metrics: <span class="mono">api_calls</span>, <span class="mono">api_failures</span>, <span class="mono">cache_hits/misses</span>, <span class="mono">retry_attempts</span>, <span class="mono">api_time_ms_total</span>, latency buckets, <span class="mono">structured_storage_failures</span></li>
+  </ul>
+  <h3>Key Paths</h3>
+  <ul>
+    <li>Orchestrator: <code>Main/enhanced_flight_search.py::EnhancedFlightSearchClient</code></li>
+    <li>Cache: <code>Main/cache.py::FlightSearchCache</code></li>
+    <li>External API: <code>Main/serpapi_client.py::SerpAPIFlightClient</code></li>
+    <li>Writer: <code>Main/persistence/structured_writer.py::StructuredFlightWriter</code></li>
+    <li>Services: <code>Main/services/inbound_merge.py</code>, <code>Main/services/week_aggregator.py</code></li>
+    <li>WebApp: <code>WebApp/app/main.py</code>, auth under <code>WebApp/app/auth/*</code></li>
+    <li>DB: <code>DB/database_helper.py</code>, snapshot <code>DB/current_schema.sql</code></li>
+  </ul>
+</div>
+
+<div class="footer">Generated: 2025-09-12 • File: ARCHITECTURE_OVERVIEW_2025-09-12.html</div>
+</body>
+</html>

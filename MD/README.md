@@ -13,6 +13,9 @@ A comprehensive flight data collection, storage, and analysis system using SerpA
 
 ## 📄 Reports
 
+- Architecture & Core Components (2025-09-12):
+    - HTML: [ARCHITECTURE_OVERVIEW_2025-09-12.html](./Reports/ARCHITECTURE_OVERVIEW_2025-09-12.html)
+    - Markdown: [ARCHITECTURE_OVERVIEW_2025-09-12.md](./Reports/ARCHITECTURE_OVERVIEW_2025-09-12.md)
 - Latest In-Depth Evaluation (2025-09-12):
     - HTML: [IN_DEPTH_EVALUATION_2025-09-12.html](./Reports/IN_DEPTH_EVALUATION_2025-09-12.html)
     - Markdown: [IN_DEPTH_EVALUATION_2025-09-12.md](./Reports/IN_DEPTH_EVALUATION_2025-09-12.md)
