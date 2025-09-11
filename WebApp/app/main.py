@@ -67,15 +67,15 @@ async def root(request: Request):
     # Serve React SPA for production landing if built; otherwise minimal fallback.
     if REACT_DIST_ENABLED:
         return HTMLResponse(_load_react_index())
-    return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Welcome</h3><p>React build not found. Run the dev server on port 9000 or build with <code>npm run build</code>.</p></body></html>")
+    return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Welcome</h3><p>React build not found. Build the frontend with <code>npm run build</code> to serve the SPA from this server.</p></body></html>")
 
 
 @app.get("/flight-search", response_class=HTMLResponse, tags=["ui"])
 async def flight_search_ui():
         # Serve the built React SPA at this path when available; otherwise show a simple message.
-        if REACT_DIST_ENABLED:
-                return HTMLResponse(_load_react_index())
-        return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Flight Search</h3><p>React build not found. Run the dev server on port 9000 or build with <code>npm run build</code>.</p></body></html>")
+    if REACT_DIST_ENABLED:
+        return HTMLResponse(_load_react_index())
+    return HTMLResponse("<!DOCTYPE html><html><body style='font-family:system-ui'><h3>Flight Search</h3><p>React build not found. Build the frontend with <code>npm run build</code> to serve the SPA from this server.</p></body></html>")
 
 
 

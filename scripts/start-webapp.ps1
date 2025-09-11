@@ -9,7 +9,7 @@ Behavior (made permanent per request):
 
 Usage:
   .\scripts\start-webapp.ps1                            # start on 127.0.0.1:8000
-  .\scripts\start-webapp.ps1 -BindHost 0.0.0.0 -Port 9000 # custom bind
+  .\scripts\start-webapp.ps1 -BindHost 0.0.0.0 -Port 8000 # custom bind
 #>
 
 param(
