@@ -11,6 +11,14 @@ CI consolidation: Workflows are merged into a single `ci.yml` running tests on P
 
 A comprehensive flight data collection, storage, and analysis system using SerpAPI Google Flights API.
 
+## 📄 Reports
+
+- Latest In-Depth Evaluation (2025-09-12):
+    - HTML: [IN_DEPTH_EVALUATION_2025-09-12.html](./Reports/IN_DEPTH_EVALUATION_2025-09-12.html)
+    - Markdown: [IN_DEPTH_EVALUATION_2025-09-12.md](./Reports/IN_DEPTH_EVALUATION_2025-09-12.md)
+- Previous Evaluation (2025-09-11):
+    - HTML: [Project-Evaluation-2025-09-11-HTML-Report.html](./Reports/Project-Evaluation-2025-09-11-HTML-Report.html)
+
 ## 🎯 System Overview
 
 This system provides complete flight data management capabilities:
