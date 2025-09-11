@@ -562,7 +562,7 @@ export default function App() {
   }
   return (
     <div style={{fontFamily:'Inter, system-ui, sans-serif', padding:16}}>
-      <h2>SerpFlights (React) <span style={{fontSize:12, padding:'2px 6px', border:'1px solid #ddd', borderRadius:4, marginLeft:8}}>V2</span></h2>
+  <h2>Flight Search</h2>
       <div style={{display:'flex', gap:12, rowGap:8, flexWrap:'wrap', alignItems:'flex-end'}}>
         <AirportSuggestInput ref={originRef} placeholder="Origin (code, name, city, country)" style={{ width: 260, flex: '0 0 260px' }} airportsReady={airportsReady} airportList={airportList} />
         <AirportSuggestInput ref={destRef} placeholder="Destination (code, name, city, country)" style={{ width: 280, flex: '0 0 280px' }} airportsReady={airportsReady} airportList={airportList} />
