@@ -39,8 +39,8 @@ try {
   $existing = Get-PidsByPort -p $Port
   if ($existing -and $existing.Count -gt 0) {
     Write-Warning ("[start-webapp] Found process(es) on :{0} -> {1}. Terminating..." -f $Port, ($existing -join ','))
-    foreach ($pid in $existing) {
-      try { Stop-Process -Id $pid -Force -ErrorAction Stop; Write-Host ("[start-webapp] Stopped PID {0}" -f $pid) -ForegroundColor Yellow } catch { Write-Warning ("[start-webapp] Failed to stop PID {0}: {1}" -f $pid, $_.Exception.Message) }
+    foreach ($procId in $existing) {
+      try { Stop-Process -Id $procId -Force -ErrorAction Stop; Write-Host ("[start-webapp] Stopped PID {0}" -f $procId) -ForegroundColor Yellow } catch { Write-Warning ("[start-webapp] Failed to stop PID {0}: {1}" -f $procId, $_.Exception.Message) }
     }
     Start-Sleep -Milliseconds 500
   }

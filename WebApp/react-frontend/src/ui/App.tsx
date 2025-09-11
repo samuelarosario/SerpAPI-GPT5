@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import Login from './Login';
 
 function useAuthToken() {
@@ -40,6 +40,23 @@ function summarizeFlight(f: any){
   return { route, price, duration, stops };
 }
 
+// Format price as "$ 12,345" (thousands separated, no decimals). Falls back to raw if unparseable.
+function formatUSD(val: any): string {
+  const toNum = (v: any): number | null => {
+    if (typeof v === 'number' && isFinite(v)) return v;
+    if (typeof v === 'string') {
+      const m = v.replace(/[^0-9.]/g, '');
+      const n = parseFloat(m);
+      return isNaN(n) ? null : n;
+    }
+    return null;
+  };
+  const n = toNum(val);
+  if (n == null) return String(val ?? 'N/A');
+  const body = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(n);
+  return `\$ ${body}`;
+}
+
 function stopsCount(f: any){
   const segs = Array.isArray(f?.flights)? f.flights : [];
   return Math.max(0, segs.length - 1);
@@ -75,6 +92,9 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [outbound, setOutbound] = useState<any[]>([]);
   const [inbound, setInbound] = useState<any[]>([]);
+  const [meta, setMeta] = useState<{ out?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number }; in?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number } }>({});
+  const [airportMeta, setAirportMeta] = useState<Record<string, { code: string; name?: string; country?: string; country_code?: string; city?: string }>>({});
+  const [airlineMeta, setAirlineMeta] = useState<Record<string, { code: string; name: string }>>({});
   const minRet = useMemo(() => date ? addDays(date, 1) : '', [date]);
   // Outbound must be at least +1 day from today
   const minOut = useMemo(() => tomorrow(), []);
@@ -98,6 +118,9 @@ export default function App() {
     const layovers: any[] = Array.isArray(f?.layovers) ? f.layovers : [];
     const travelClassMap: Record<string,string> = { '1':'Economy', '2':'Premium Economy', '3':'Business', '4':'First' };
     const cls = travelClassMap[tclass] ?? 'Economy';
+  const priceText = formatUSD(f?.price ?? s.price);
+  const [showData, setShowData] = useState(false);
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
 
     const rowStyle: React.CSSProperties = { display:'grid', gridTemplateColumns:'16px 1fr', gap:12, alignItems:'start' };
     const dot: React.CSSProperties = { width:8, height:8, borderRadius:999, background:'#9aa0a6', marginTop:6 };
@@ -106,7 +129,7 @@ export default function App() {
     const strong: React.CSSProperties = { fontWeight:600 };
 
     return (
-      <details style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#0f172a0a'}}>
+      <details ref={detailsRef} style={{border:'1px solid #e5e7eb', borderRadius:12, padding:12, marginBottom:12, background:'#0f172a0a'}}>
         <summary style={{display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', listStyle:'none'}}>
           <div style={{display:'flex', gap:8, alignItems:'center', flexWrap:'wrap'}}>
             <span style={{fontWeight:600}}>{s.route}</span>
@@ -117,7 +140,13 @@ export default function App() {
               </span>
             )}
           </div>
-          <div style={{fontSize:16, fontWeight:700}}>{s.price}</div>
+          <div style={{display:'flex', alignItems:'center', gap:10}}>
+            <button type="button" onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); setShowData(v=>{ const nv=!v; if(nv && detailsRef.current){ detailsRef.current.open = true; } return nv; }); }}
+              style={{fontSize:11, padding:'2px 8px', border:'1px solid #d1d5db', borderRadius:999, background:'#fff', color:'#475569', cursor:'pointer'}}>
+              {showData? 'Hide data' : 'Data info'}
+            </button>
+            <div style={{fontSize:16, fontWeight:700}}>{priceText}</div>
+          </div>
         </summary>
         <div style={{marginTop:12, display:'grid', gridTemplateColumns:'auto 1fr', gap:0}}>
           <div style={{gridColumn:'1 / span 1'}}></div>
@@ -134,7 +163,17 @@ export default function App() {
                   const arrCode = seg?.arrival_airport?.id || '';
                   const depName = seg?.departure_airport?.name || depCode;
                   const arrName = seg?.arrival_airport?.name || arrCode;
-                  const airline = seg?.airline || '';
+                  const alCode = String(seg?.airline_code || '').toUpperCase();
+                  const derivedCode = (() => { const s=String(seg?.flight_number||'').toUpperCase(); const m=s.match(/^([A-Z0-9]{2,3})\s*#?\s*\d/); return m? m[1] : ''; })();
+                  const codeFromAirlineField = (() => { const a = String(seg?.airline||'').toUpperCase().trim(); return /^[A-Z0-9]{2,3}$/.test(a) ? a : ''; })();
+                  const prefCode = (alCode || derivedCode || codeFromAirlineField);
+                  const metaName = prefCode ? airlineMeta[prefCode]?.name : undefined;
+                  let airlineName = (seg?.airline_name || seg?.airline || '').toString();
+                  if ((!airlineName || /^[A-Z0-9]{2,3}$/.test(airlineName)) && metaName) {
+                    airlineName = String(metaName);
+                  } else if (!airlineName && prefCode) {
+                    airlineName = prefCode; // final fallback to code
+                  }
                   const fnum = seg?.flight_number || '';
                   const aircraft = seg?.aircraft || '';
                   const depT = fmtHM(seg?.departure_time);
@@ -143,6 +182,9 @@ export default function App() {
                   const lay = layovers[i]; // layover after this segment (i -> between i and i+1)
                   const layDurMin = Number(lay?.duration) || 0;
                   const isShortLayover = layDurMin > 0 && layDurMin < 120; // < 2 hours
+                  const layCode = String(lay?.id || arrCode || '').toUpperCase();
+                  const layMeta = layCode ? airportMeta[layCode] : undefined;
+                  const layLabel = layMeta?.country ? `${layMeta.country} (${layCode})` : (lay?.name || lay?.id || (arrName + ' (' + arrCode + ')'));
                   const noticeStyle: React.CSSProperties = isShortLayover
                     ? { background:'#FEE2E2', border:'1px solid #FCA5A5', color:'#991B1B', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' }
                     : { background:'#FEF3C7', border:'1px solid #FDE68A', color:'#92400E', borderRadius:8, padding:'8px 10px', display:'flex', justifyContent:'space-between', alignItems:'center' };
@@ -163,7 +205,7 @@ export default function App() {
                             </div>
                           </div>
                           <div style={{...small, marginTop:4}}>
-                            {[airline, cls, aircraft].filter(Boolean).join(' • ')}{fnum? ` • ${airline ? '' : 'Flight '}#${fnum}`:''}
+                            {[airlineName, cls, aircraft].filter(Boolean).join(' • ')}{fnum? ` • ${airlineName ? '' : 'Flight '}${String(fnum).replace(/^#\s*/, '')}`:''}
                           </div>
                         </div>
                       </div>
@@ -177,7 +219,7 @@ export default function App() {
                               <div style={noticeStyle}>
                                 <div style={{fontSize:13}}>
                                   <span style={{fontWeight:700}}>{fmtDuration(Number(lay?.duration))} layover</span>
-                                  {` • ${lay?.name || lay?.id || (arrName + ' (' + arrCode + ')')}`}
+                                  {` • ${layLabel}`}
                                 </div>
                                 {isShortLayover ? (
                                   <div style={{display:'flex', alignItems:'center', gap:6, color:'#991B1B', fontWeight:700}} title="Short layover">
@@ -200,6 +242,43 @@ export default function App() {
                 })}
               </div>
             )}
+
+            {/* Data info section: which elements are fetched */}
+            {showData && (
+              <div style={{marginTop:12, border:'1px dashed #cbd5e1', background:'#f8fafc', borderRadius:8, padding:10}}>
+                <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
+                  <strong>Used fields (per segment):</strong> departure_airport.id, departure_airport.name, arrival_airport.id, arrival_airport.name, departure_time, arrival_time, airline_name, flight_number, aircraft, duration
+                </div>
+                <div style={{fontSize:12, color:'#0f172a', marginBottom:6}}>
+                  <strong>Used fields (flight-level):</strong> price, total_duration, flights[], layovers[]
+                </div>
+                <div style={{display:'flex', flexDirection:'column', gap:8}}>
+                  {segs.map((seg:any, i:number) => {
+                    const topKeys = Object.keys(seg || {}).sort();
+                    const depKeys = seg?.departure_airport && typeof seg.departure_airport === 'object' ? Object.keys(seg.departure_airport).sort() : [];
+                    const arrKeys = seg?.arrival_airport && typeof seg.arrival_airport === 'object' ? Object.keys(seg.arrival_airport).sort() : [];
+                    return (
+                      <div key={'k'+i} style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
+                        <div style={{fontWeight:600, marginBottom:4}}>Segment {i+1}: {seg?.departure_airport?.id || '?'} → {seg?.arrival_airport?.id || '?'}</div>
+                        <div><span style={{color:'#475569'}}>Top-level keys:</span> {topKeys.join(', ') || '—'}</div>
+                        <div><span style={{color:'#475569'}}>departure_airport keys:</span> {depKeys.join(', ') || '—'}</div>
+                        <div><span style={{color:'#475569'}}>arrival_airport keys:</span> {arrKeys.join(', ') || '—'}</div>
+                      </div>
+                    );
+                  })}
+                  {layovers.length > 0 && (
+                    <div style={{fontSize:12, background:'#fff', border:'1px solid #e5e7eb', borderRadius:6, padding:8}}>
+                      <div style={{fontWeight:600, marginBottom:4}}>Layovers</div>
+                      {layovers.map((lv:any, i:number) => (
+                        <div key={'l'+i} style={{marginBottom:4}}>
+                          <span style={{color:'#475569'}}>Layover {i+1} keys:</span> {Object.keys(lv||{}).sort().join(', ') || '—'}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </details>
@@ -208,11 +287,67 @@ export default function App() {
 
   
 
-  async function authFetch(path: string) {
-  const tok = localStorage.getItem('access_token');
-  if(!tok) throw new Error('Not authenticated');
-  const r = await fetch(path, { headers: { Authorization: `Bearer ${tok}` } });
+  async function authFetch(path: string, opts?: { allowNoAuth?: boolean }) {
+    const tok = localStorage.getItem('access_token');
+    const headers: Record<string,string> = {};
+    if (tok) headers.Authorization = `Bearer ${tok}`;
+    else if (!opts?.allowNoAuth) throw new Error('Not authenticated');
+    const r = await fetch(path, { headers });
     return r;
+  }
+
+  // Enrich airport metadata for IATA codes via backend batch endpoint
+  async function fetchAirportMetaForCodes(codes: string[]) {
+    const list = Array.from(new Set((codes||[]).map(c => String(c||'').trim().toUpperCase()).filter(Boolean)));
+    const missing = list.filter(c => !airportMeta[c]);
+    if(missing.length === 0) return;
+    try{
+  let rr = await authFetch(`/api/airports/by_codes?codes=${encodeURIComponent(missing.join(','))}`, { allowNoAuth: true });
+      const jj = await rr.json();
+      if(Array.isArray(jj)){
+        const map: Record<string, any> = {};
+        for(const row of jj){ if(row && row.code){ map[String(row.code).toUpperCase()] = row; } }
+        setAirportMeta(prev => ({ ...prev, ...map }));
+      }
+    }catch{
+      // Fallback unauthenticated fetch (endpoint is public)
+      try {
+        const rr2 = await fetch(`/api/airports/by_codes?codes=${encodeURIComponent(missing.join(','))}`);
+        const jj2 = await rr2.json();
+        if(Array.isArray(jj2)){
+          const map: Record<string, any> = {};
+          for(const row of jj2){ if(row && row.code){ map[String(row.code).toUpperCase()] = row; } }
+          setAirportMeta(prev => ({ ...prev, ...map }));
+        }
+      } catch {}
+    }
+  }
+
+  // Enrich airline names by airline codes via backend batch endpoint
+  async function fetchAirlineMetaForCodes(codes: string[]) {
+    const list = Array.from(new Set((codes||[]).map(c => String(c||'').trim().toUpperCase()).filter(Boolean)));
+    const missing = list.filter(c => !airlineMeta[c]);
+    if(missing.length === 0) return;
+    try{
+  let rr = await authFetch(`/api/airlines/by_codes?codes=${encodeURIComponent(missing.join(','))}`, { allowNoAuth: true });
+      const jj = await rr.json();
+      if(Array.isArray(jj)){
+        const map: Record<string, any> = {};
+        for(const row of jj){ if(row && row.code){ map[String(row.code).toUpperCase()] = { code: String(row.code).toUpperCase(), name: row.name || row.code }; } }
+        setAirlineMeta(prev => ({ ...prev, ...map }));
+      }
+    }catch{
+      // Fallback unauthenticated fetch (endpoint is public)
+      try {
+        const rr2 = await fetch(`/api/airlines/by_codes?codes=${encodeURIComponent(missing.join(','))}`);
+        const jj2 = await rr2.json();
+        if(Array.isArray(jj2)){
+          const map: Record<string, any> = {};
+          for(const row of jj2){ if(row && row.code){ map[String(row.code).toUpperCase()] = { code: String(row.code).toUpperCase(), name: row.name || row.code }; } }
+          setAirlineMeta(prev => ({ ...prev, ...map }));
+        }
+      } catch {}
+    }
   }
 
   async function search() {
@@ -229,23 +364,84 @@ export default function App() {
       const q1 = `/api/flight_search?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}&date=${encodeURIComponent(date)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
       const r1 = await authFetch(q1); const j1 = await r1.json();
       if(!j1?.success){ setError(j1?.error||'Search failed'); setBusy(false); return; }
+  const outBest = Array.isArray(j1?.data?.best_flights)? j1.data.best_flights : [];
+  const outOther = Array.isArray(j1?.data?.other_flights)? j1.data.other_flights : [];
   const out = [
-        ...(Array.isArray(j1?.data?.best_flights)? j1.data.best_flights : []),
-        ...(Array.isArray(j1?.data?.other_flights)? j1.data.other_flights : [])
+        ...outBest,
+        ...outOther
       ];
   setOutbound(sortFlightsByStops(out));
+      setMeta(m => ({
+        ...m,
+        out: {
+          source: j1?.source,
+          cacheAgeHours: typeof j1?.cache_age_hours === 'number' ? j1.cache_age_hours : undefined,
+          searchId: typeof j1?.search_id === 'string' ? j1.search_id : undefined,
+          total: (outBest?.length||0) + (outOther?.length||0),
+          best: outBest?.length||0,
+          other: outOther?.length||0
+        }
+      }));
+      const collectAirportCodes = (list:any[]) => {
+        const set = new Set<string>();
+        for(const f of list||[]){
+          const segs = Array.isArray(f?.flights)? f.flights : [];
+          const lays = Array.isArray(f?.layovers)? f.layovers : [];
+          segs.forEach((seg:any) => { const ac = seg?.arrival_airport?.id; if(ac) set.add(String(ac).toUpperCase()); });
+          lays.forEach((lv:any) => { const lc = lv?.id; if(lc) set.add(String(lc).toUpperCase()); });
+        }
+        return Array.from(set);
+      };
+  const collectAirlineCodes = (list:any[]) => {
+        const set = new Set<string>();
+        const deriveFromFlight = (fn:any):string => {
+          const s = String(fn||'').toUpperCase();
+          const m = s.match(/^([A-Z0-9]{2,3})\s*#?\s*\d/);
+          return m? m[1] : '';
+        };
+        for(const f of list||[]){
+          const segs = Array.isArray(f?.flights)? f.flights : [];
+          segs.forEach((seg:any) => {
+            const code = String(seg?.airline_code || deriveFromFlight(seg?.flight_number) || '').toUpperCase().trim();
+            if(code) set.add(code);
+    const a = String(seg?.airline||'').toUpperCase().trim();
+    if(/^[A-Z0-9]{2,3}$/.test(a)) set.add(a);
+          });
+        }
+        return Array.from(set);
+      };
+      let codesToFetch = collectAirportCodes(out);
+      let airlineCodes = collectAirlineCodes(out);
       if(trip !== 'oneway' && ret){
         const q2 = `/api/flight_search?origin=${encodeURIComponent(dest)}&destination=${encodeURIComponent(origin)}&date=${encodeURIComponent(ret)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
         const r2 = await authFetch(q2); const j2 = await r2.json();
         if(!j2?.success){ setError(j2?.error||'Inbound failed'); setBusy(false); return; }
+  const inBest = Array.isArray(j2?.data?.best_flights)? j2.data.best_flights : [];
+  const inOther = Array.isArray(j2?.data?.other_flights)? j2.data.other_flights : [];
   const inn = [
-          ...(Array.isArray(j2?.data?.best_flights)? j2.data.best_flights : []),
-          ...(Array.isArray(j2?.data?.other_flights)? j2.data.other_flights : [])
+          ...inBest,
+          ...inOther
         ];
   setInbound(sortFlightsByStops(inn));
+        setMeta(m => ({
+          ...m,
+          in: {
+            source: j2?.source,
+            cacheAgeHours: typeof j2?.cache_age_hours === 'number' ? j2.cache_age_hours : undefined,
+            searchId: typeof j2?.search_id === 'string' ? j2.search_id : undefined,
+            total: (inBest?.length||0) + (inOther?.length||0),
+            best: inBest?.length||0,
+            other: inOther?.length||0
+          }
+        }));
+        codesToFetch = Array.from(new Set([...codesToFetch, ...collectAirportCodes(inn)]));
+        airlineCodes = Array.from(new Set([...airlineCodes, ...collectAirlineCodes(inn)]));
       } else {
         setInbound([]);
+        setMeta(m => ({ ...m, in: undefined }));
       }
+      await fetchAirportMetaForCodes(codesToFetch);
+      await fetchAirlineMetaForCodes(airlineCodes);
     } finally { setBusy(false); }
   }
 
@@ -273,15 +469,47 @@ export default function App() {
         <button onClick={search} disabled={busy}>{busy?'Searching…':'Search'}</button>
       </div>
       {error && <div style={{color:'#b91c1c', marginTop:8}}>{error}</div>}
+      {/* Meta info panel */}
+      {(meta.out || meta.in) && (
+        <div style={{marginTop:12, border:'1px solid #e5e7eb', background:'#f8fafc', borderRadius:8, padding:10, color:'#334155'}}>
+          <div style={{fontSize:13, marginBottom:6}}>
+            <strong>Criteria:</strong> {origin||'—'} → {dest||'—'} on {date||'—'}{trip!=='oneway' && ret? ` • return ${ret}`:''} • class {({ '1':'Economy','2':'Premium Economy','3':'Business','4':'First' } as any)[tclass] || 'Economy'}
+          </div>
+          {meta.out && (
+            <div style={{fontSize:12, marginBottom:4}}>
+              <strong>Outbound:</strong> {meta.out.total} results (best {meta.out.best}, other {meta.out.other}) — Source: {meta.out.source || 'unknown'}{typeof meta.out.cacheAgeHours==='number'? ` (age ${meta.out.cacheAgeHours.toFixed(1)}h)` : ''}{meta.out.searchId? ` • id ${meta.out.searchId}`:''}
+            </div>
+          )}
+          {meta.in && (
+            <div style={{fontSize:12}}>
+              <strong>Inbound:</strong> {meta.in.total} results (best {meta.in.best}, other {meta.in.other}) — Source: {meta.in.source || 'unknown'}{typeof meta.in.cacheAgeHours==='number'? ` (age ${meta.in.cacheAgeHours.toFixed(1)}h)` : ''}{meta.in.searchId? ` • id ${meta.in.searchId}`:''}
+            </div>
+          )}
+        </div>
+      )}
       <div style={{display:'flex', gap:24, marginTop:16}}>
         <div style={{flex:1}}>
-          <h3 style={{margin:'8px 0'}}>Outbound {outbound.length? `(${outbound.length})`: ''}</h3>
+          <h3 style={{margin:'8px 0', display:'flex', alignItems:'center', gap:8}}>
+            <span>Outbound {outbound.length? `(${outbound.length})`: ''}</span>
+            {meta.out?.source && (
+              <span style={{fontSize:11, padding:'2px 6px', border:'1px solid #ddd', borderRadius:999, color:'#475569', background:'#fff'}} title={typeof meta.out.cacheAgeHours==='number'? `Cache age: ${meta.out.cacheAgeHours.toFixed(1)}h` : (meta.out.searchId? `Search ID: ${meta.out.searchId}` : '')}>
+                {meta.out.source.toUpperCase()}
+              </span>
+            )}
+          </h3>
           {outbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : outbound.slice(0,20).map((f,i)=> (
             <ItineraryCard key={i} f={f} />
           ))}
         </div>
         <div style={{flex:1}}>
-          <h3 style={{margin:'8px 0'}}>Inbound {inbound.length? `(${inbound.length})`: ''}</h3>
+          <h3 style={{margin:'8px 0', display:'flex', alignItems:'center', gap:8}}>
+            <span>Inbound {inbound.length? `(${inbound.length})`: ''}</span>
+            {meta.in?.source && (
+              <span style={{fontSize:11, padding:'2px 6px', border:'1px solid #ddd', borderRadius:999, color:'#475569', background:'#fff'}} title={typeof meta.in.cacheAgeHours==='number'? `Cache age: ${meta.in.cacheAgeHours.toFixed(1)}h` : (meta.in.searchId? `Search ID: ${meta.in.searchId}` : '')}>
+                {meta.in.source.toUpperCase()}
+              </span>
+            )}
+          </h3>
           {inbound.length===0 ? <div style={{color:'#5f6368'}}>No results.</div> : inbound.slice(0,20).map((f,i)=> (
             <ItineraryCard key={i} f={f} />
           ))}

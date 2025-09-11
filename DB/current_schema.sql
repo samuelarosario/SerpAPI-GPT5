@@ -1,8 +1,8 @@
 -- Auto-generated schema snapshot
--- Generated: 2025-09-08T14:24:34.106140
--- Tables: 12
--- Table List: airlines, airports, api_queries, database_metadata, flight_results, flight_searches, flight_segments, layovers, migration_history, price_insights, route_analytics, schema_version
--- Schema Checksum: 98115d8296267ed103fb319443654e904ecac41da00114a5d2e89a57d1c28d61
+-- Generated: 2025-09-10T17:44:16.666146
+-- Tables: 13
+-- Table List: User, airlines, airports, api_queries, database_metadata, flight_results, flight_searches, flight_segments, layovers, migration_history, price_insights, route_analytics, schema_version
+-- Schema Checksum: 30d4855e6c100a508e99f976017719f15c05029772b247251dea7945dde14f9b
 
 -- INDEX: idx_airlines_code
 CREATE INDEX idx_airlines_code ON airlines(airline_code);
@@ -64,6 +64,23 @@ CREATE INDEX idx_route_analytics_airports ON route_analytics(departure_airport_c
 -- INDEX: idx_route_analytics_route
 CREATE INDEX idx_route_analytics_route ON route_analytics(route_key);
 
+-- INDEX: ix_auth_users_email
+CREATE UNIQUE INDEX ix_auth_users_email ON "User" (email);
+
+-- INDEX: ix_auth_users_id
+CREATE INDEX ix_auth_users_id ON "User" (id);
+
+-- TABLE: User
+CREATE TABLE "User" (
+	id INTEGER NOT NULL, 
+	email VARCHAR(255) NOT NULL, 
+	password_hash VARCHAR(255) NOT NULL, 
+	is_active BOOLEAN NOT NULL, 
+	created_at DATETIME NOT NULL, 
+	updated_at DATETIME NOT NULL, is_admin BOOLEAN NOT NULL DEFAULT 0, 
+	PRIMARY KEY (id)
+);
+
 -- TABLE: airlines
 CREATE TABLE airlines (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,7 +93,7 @@ CREATE TABLE airlines (
 );
 
 -- TABLE: airports
-CREATE TABLE airports (
+CREATE TABLE "airports" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     airport_code TEXT UNIQUE NOT NULL,
     airport_name TEXT NOT NULL,

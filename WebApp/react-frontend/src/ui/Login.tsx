@@ -39,7 +39,7 @@ export default function Login({ onLogin }: Props) {
       <h2 style={{marginBottom:8}}>Sign in</h2>
       <div style={{color:'#5f6368', marginBottom:16}}>Use your WebApp credentials. For local dev, try the demo user.</div>
       <form onSubmit={submit} style={{display:'flex', flexDirection:'column', gap:10}}>
-        <input placeholder="Email" type="email" value={email} onChange={(e)=>setEmail(e.target.value)} required />
+  <input placeholder="Email" type="text" value={email} onChange={(e)=>setEmail(e.target.value)} required autoComplete="username" />
         <input placeholder="Password" type="password" value={password} onChange={(e)=>setPassword(e.target.value)} required />
         {error && <div style={{color:'#b91c1c'}}>{error}</div>}
         <div style={{display:'flex', gap:8, alignItems:'center'}}>

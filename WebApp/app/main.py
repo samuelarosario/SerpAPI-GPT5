@@ -220,7 +220,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 const tabOut=document.getElementById('tabOutbound');
                 const tabIn=document.getElementById('tabInbound');
 
-                const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
+                const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let AIRLINES = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
                 function todayPlus(n){ const d=new Date(); d.setDate(d.getDate()+Number(n||0)); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 // Default to tomorrow to satisfy validation (min 1 day ahead)
                 if(!dateInput.value){ dateInput.value=todayPlus(1); }
@@ -373,7 +373,32 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                 function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=(segs[0].departure_airport?.id||'').toUpperCase(); const b=(segs[segs.length-1].arrival_airport?.id||'').toUpperCase(); const la=`${cityOrName(a)} (${a})`; const lb=`${cityOrName(b)} (${b})`; return `${la} → ${lb}`; }
                 function buildStops(f){ const n=(f.flights||[]).length-1; return Math.max(0,n); }
                 function priceStr(p){ if(!p) return 'N/A'; return (p+"").includes('USD')?p:`${p} USD`; }
-                function airlinesStr(f){ const set=new Set((f.flights||[]).map(s=>s.airline).filter(Boolean)); return Array.from(set).join(', '); }
+                function isAirlineCode(s){ return /^[A-Z]{2,3}$/.test(String(s||'').trim().toUpperCase()); }
+                function extractCodeFromFlightNumber(fn){ if(!fn) return ''; const m=String(fn).trim().match(/^([A-Z]{2,3})\s*\d+/); return m? m[1].toUpperCase() : ''; }
+                function codeFromSegment(s){
+                    const al = (s && s.airline) ? String(s.airline).trim().toUpperCase() : '';
+                    const direct = (s && s.airline_code) ? String(s.airline_code).trim().toUpperCase() : '';
+                    const fromFn = extractCodeFromFlightNumber(s && s.flight_number);
+                    if(direct && isAirlineCode(direct)) return direct;
+                    if(al && isAirlineCode(al)) return al;
+                    if(fromFn && isAirlineCode(fromFn)) return fromFn;
+                    return '';
+                }
+                function airlineDisplayName(s){
+                    const n = (s && s.airline_name) ? String(s.airline_name).trim() : '';
+                    if(n) return n;
+                    const code = codeFromSegment(s);
+                    if(code && AIRLINES && AIRLINES[code] && AIRLINES[code].name) return AIRLINES[code].name;
+                    return (s && s.airline) ? String(s.airline).trim() : '';
+                }
+                function airlinesStr(f){
+                    const set=new Set();
+                    for(const s of (f.flights||[])){
+                        const name = airlineDisplayName(s);
+                        if(name) set.add(name);
+                    }
+                    return Array.from(set).join(', ');
+                }
                 function normalize(list){
                     return list.map(f=>{
                         const segs=f.flights||[];
@@ -443,7 +468,7 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                     const dd=dayDiff(s.departure_time, s.arrival_time); const plusDay = dd>0? ` + ${dd} day${dd>1?'s':''}`:'';
                                                     const durMin = (s.duration? Number(s.duration): null);
                                                     const durStr = durMin? fmtDuration(durMin) : '';
-                                                    const al=s.airline||''; const fn=s.flight_number||'';
+                                                    const al=airlineDisplayName(s)||''; const fn=s.flight_number||'';
                                                     const depCity = cityOrName(depA); const arrCity = cityOrName(arrA);
                                                     const depHM = inferHM(s.departure_time)||fmtTime(s.departure_time)||'';
                                                     const arrHM = inferHM(s.arrival_time)||fmtTime(s.arrival_time)||'';
@@ -472,7 +497,8 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                                                         const code = (lay?.id || '').toUpperCase();
                                                         const mins = Number(lay?.duration) || 0;
                                                         const overnight = !!lay?.overnight;
-                                                        const label = `${fmtDuration(mins)} layover • ${cityOrName(code)} (${code})`;
+                                                        const layMeta = AIRPORTS && AIRPORTS[code];
+                                                        const label = `${fmtDuration(mins)} layover • ${cityOrName(code)} (${code})${layMeta && layMeta.country ? ", "+layMeta.country : ''}`;
                                                         parts.push(`<div class='layover ${overnight?'warn':''}'>${label}${overnight?' • Overnight layover ⚠️':''}</div>`);
                                                     }
                                                 }
@@ -567,6 +593,36 @@ async def flight_search_ui(request: Request):  # Simple HTML + JS form
                         const rr = await authFetch(`/api/airports/by_codes?codes=${encodeURIComponent(list)}`);
                         if(rr.ok){ const arr = await rr.json(); const map = Object.create(null); (arr||[]).forEach(it=>{ if(it && it.code){ map[(it.code||'').toUpperCase()] = it; } }); AIRPORTS = map; }
                     }catch{}
+                    // Build airline code set and fetch airline names in batch
+                    try{
+                        const alSet = new Set();
+                        for(const f of flights){
+                            for(const s of (f.flights||[])){
+                                const c = codeFromSegment(s);
+                                if(c) alSet.add(c);
+                            }
+                        }
+                        if(alSet.size){
+                            const list = Array.from(alSet).join(',');
+                            const rr2 = await authFetch(`/api/airlines/by_codes?codes=${encodeURIComponent(list)}`);
+                            if(rr2.ok){ const arr = await rr2.json(); const map = Object.create(null); (arr||[]).forEach(it=>{ if(it && it.code){ map[(it.code||'').toUpperCase()] = it; } }); AIRLINES = map; }
+                        } else { AIRLINES = Object.create(null); }
+                    }catch{ AIRLINES = Object.create(null); }
+                    // Build airline code set and fetch airline names in batch
+                    try{
+                        const alSet = new Set();
+                        for(const f of flights){
+                            for(const s of (f.flights||[])){
+                                const c = codeFromSegment(s);
+                                if(c) alSet.add(c);
+                            }
+                        }
+                        if(alSet.size){
+                            const list = Array.from(alSet).join(',');
+                            const rr2 = await authFetch(`/api/airlines/by_codes?codes=${encodeURIComponent(list)}`);
+                            if(rr2.ok){ const arr = await rr2.json(); const map = Object.create(null); (arr||[]).forEach(it=>{ if(it && it.code){ map[(it.code||'').toUpperCase()] = it; } }); AIRLINES = map; }
+                        } else { AIRLINES = Object.create(null); }
+                    }catch{ AIRLINES = Object.create(null); }
                     // Resolve friendly names for origin/destination for a larger heading
                     async function fetchAirport(code){
                         try{
@@ -812,7 +868,7 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                     if(searchBtn){ searchBtn.textContent = b? 'Searching…' : 'Search'; }
                 }
 
-                const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
+                const PAGE_SIZE=10; let ALL=[], OUT=[], IN=[], META={source:''}; let page=1; let AIRPORTS = Object.create(null); let AIRLINES = Object.create(null); let CURRENT_DT=''; let CURRENT_RET_DT=''; let CURRENT_ORIG=''; let CURRENT_DEST=''; let currentView='outbound';
                 function today(){ const d=new Date(); const m=('0'+(d.getMonth()+1)).slice(-2); const day=('0'+d.getDate()).slice(-2); return `${d.getFullYear()}-${m}-${day}`; }
                 dateInput.value=today();
                 function ymdToDate(ymd){ if(!ymd) return null; try{ const d=new Date(String(ymd).trim()+"T00:00:00"); return isNaN(d.getTime())? null : d; }catch{return null} }
@@ -921,7 +977,32 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                 function buildRoute(f){ const segs=f.flights||[]; if(!segs.length) return 'Flight'; const a=(segs[0].departure_airport?.id||'').toUpperCase(); const b=(segs[segs.length-1].arrival_airport?.id||'').toUpperCase(); const la=`${cityOrName(a)} (${a})`; const lb=`${cityOrName(b)} (${b})`; return `${la} → ${lb}`; }
                 function buildStops(f){ const n=(f.flights||[]).length-1; return Math.max(0,n); }
                 function priceStr(p){ if(!p) return 'N/A'; return (p+"").includes('USD')?p:`${p} USD`; }
-                function airlinesStr(f){ const set=new Set((f.flights||[]).map(s=>s.airline).filter(Boolean)); return Array.from(set).join(', '); }
+                function isAirlineCode(s){ return /^[A-Z]{2,3}$/.test(String(s||'').trim().toUpperCase()); }
+                function extractCodeFromFlightNumber(fn){ if(!fn) return ''; const m=String(fn).trim().match(/^([A-Z]{2,3})\s*\d+/); return m? m[1].toUpperCase() : ''; }
+                function codeFromSegment(s){
+                    const al = (s && s.airline) ? String(s.airline).trim().toUpperCase() : '';
+                    const direct = (s && s.airline_code) ? String(s.airline_code).trim().toUpperCase() : '';
+                    const fromFn = extractCodeFromFlightNumber(s && s.flight_number);
+                    if(direct && isAirlineCode(direct)) return direct;
+                    if(al && isAirlineCode(al)) return al;
+                    if(fromFn && isAirlineCode(fromFn)) return fromFn;
+                    return '';
+                }
+                function airlineDisplayName(s){
+                    const n = (s && s.airline_name) ? String(s.airline_name).trim() : '';
+                    if(n) return n;
+                    const code = codeFromSegment(s);
+                    if(code && AIRLINES && AIRLINES[code] && AIRLINES[code].name) return AIRLINES[code].name;
+                    return (s && s.airline) ? String(s.airline).trim() : '';
+                }
+                function airlinesStr(f){
+                    const set=new Set();
+                    for(const s of (f.flights||[])){
+                        const name = airlineDisplayName(s);
+                        if(name) set.add(name);
+                    }
+                    return Array.from(set).join(', ');
+                }
                 function normalize(list){
                     return list.map(f=>{
                         const segs=f.flights||[];
@@ -991,7 +1072,7 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                                                     const dd=dayDiff(s.departure_time, s.arrival_time); const plusDay = dd>0? ` + ${dd} day${dd>1?'s':''}`:'';
                                                     const durMin = (s.duration? Number(s.duration): null);
                                                     const durStr = durMin? fmtDuration(durMin) : '';
-                                                    const al=s.airline||''; const fn=s.flight_number||'';
+                                                    const al=airlineDisplayName(s)||''; const fn=s.flight_number||'';
                                                     const depCity = cityOrName(depA); const arrCity = cityOrName(arrA);
                                                     const depHM = inferHM(s.departure_time)||fmtTime(s.departure_time)||'';
                                                     const arrHM = inferHM(s.arrival_time)||fmtTime(s.arrival_time)||'';
@@ -1020,7 +1101,8 @@ async def flight_search_ui_v2(request: Request):  # Independent HTML copy
                                                         const code = (lay?.id || '').toUpperCase();
                                                         const mins = Number(lay?.duration) || 0;
                                                         const overnight = !!lay?.overnight;
-                                                        const label = `${fmtDuration(mins)} layover • ${cityOrName(code)} (${code})`;
+                                                        const layMeta = AIRPORTS && AIRPORTS[code];
+                                                        const label = `${fmtDuration(mins)} layover • ${cityOrName(code)} (${code})${layMeta && layMeta.country ? ", "+layMeta.country : ''}`;
                                                         parts.push(`<div class='layover ${overnight?'warn':''}'>${label}${overnight?' • Overnight layover ⚠️':''}</div>`);
                                                     }
                                                 }
@@ -1282,6 +1364,29 @@ async def airports_by_codes(codes: str = Query(..., description="Comma-separated
         FROM airports
         WHERE airport_code IN ({placeholders})
         ORDER BY airport_code ASC
+        """
+    )
+    with engine.connect() as conn:
+        rows = conn.execute(sql, params).mappings().fetchall()
+        out = [dict(r) for r in rows]
+    return JSONResponse(out)
+
+
+@app.get("/api/airlines/by_codes", response_class=JSONResponse, tags=["airlines"])
+async def airlines_by_codes(codes: str = Query(..., description="Comma-separated airline IATA/ICAO codes (2-3 chars)")):
+    # Normalize codes to upper and unique
+    codes_list = [c.strip().upper() for c in codes.split(',') if c.strip()]
+    if not codes_list:
+        return JSONResponse([])
+    codes_list = codes_list[:200]
+    placeholders = ','.join([f":c{i}" for i in range(len(codes_list))])
+    params = {f"c{i}": code for i, code in enumerate(codes_list)}
+    sql = text(
+        f"""
+        SELECT airline_code AS code, airline_name AS name
+        FROM airlines
+        WHERE airline_code IN ({placeholders})
+        ORDER BY airline_code ASC
         """
     )
     with engine.connect() as conn:
