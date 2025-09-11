@@ -273,10 +273,10 @@ const AirportSuggestInput = forwardRef<AirportInputRef, {
   placeholder: string;
   style?: React.CSSProperties;
   airportsReady: boolean;
-  airportList: Array<{code:string; name?:string; city?:string; country?:string; country_code?:string}>;
+  airportList: Array<{code:string; city?:string; country?:string}>;
 }>(function AirportSuggestInput({ placeholder, style, airportsReady, airportList }, ref){
   const [value, setValue] = useState('');
-  const [items, setItems] = useState<Array<{code:string; name?:string; city?:string; country?:string}>>([]);
+  const [items, setItems] = useState<Array<{code:string; city?:string; country?:string}>>([]);
   const timerRef = useRef<number | null>(null);
   const listIdRef = useRef<string>(`ap-list-${Math.random().toString(36).slice(2)}`);
   const listId = listIdRef.current;
@@ -297,10 +297,9 @@ const AirportSuggestInput = forwardRef<AirportInputRef, {
       if(airportsReady && airportList.length){
         const res = airportList.filter(a => {
           const code = (a.code||'').toLowerCase();
-          const name = (a.name||'').toLowerCase();
           const city = (a.city||'').toLowerCase();
           const country = (a.country||'').toLowerCase();
-          return code.includes(qq) || name.includes(qq) || city.includes(qq) || country.includes(qq);
+          return code.includes(qq) || city.includes(qq) || country.includes(qq);
         }).slice(0, 10);
         setItems(res);
         return;
@@ -324,7 +323,7 @@ const AirportSuggestInput = forwardRef<AirportInputRef, {
       <input ref={inputRef} list={listId} placeholder={placeholder} value={value} onChange={onInput} onInput={onOptionSelect} style={{ width:'100%' }} />
       <datalist id={listId}>
         {items.map((it, i) => {
-          const label = `${(it.code||'').toUpperCase()} — ${it.name||''}${it.city?` (${it.city})`:''}${it.country?`, ${it.country}`:''}`;
+          const label = `${(it.code||'').toUpperCase()}${it.city?` (${it.city})`:''}${it.country?`, ${it.country}`:''}`;
           return <option key={it.code+String(i)} value={(it.code||'').toUpperCase()} label={label} />;
         })}
       </datalist>
@@ -346,10 +345,10 @@ export default function App() {
   const [outbound, setOutbound] = useState<any[]>([]);
   const [inbound, setInbound] = useState<any[]>([]);
   const [meta, setMeta] = useState<{ out?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number }; in?: { source?: string; cacheAgeHours?: number; searchId?: string; total: number; best: number; other: number } }>({});
-  const [airportMeta, setAirportMeta] = useState<Record<string, { code: string; name?: string; country?: string; country_code?: string; city?: string }>>({});
+  const [airportMeta, setAirportMeta] = useState<Record<string, { code: string; country?: string; city?: string }>>({});
   const [airlineMeta, setAirlineMeta] = useState<Record<string, { code: string; name: string }>>({});
   // Preload airports once per session
-  const [airportList, setAirportList] = useState<Array<{code:string; name?:string; city?:string; country?:string; country_code?:string}>>([]);
+  const [airportList, setAirportList] = useState<Array<{code:string; city?:string; country?:string}>>([]);
   const [airportsReady, setAirportsReady] = useState(false);
   const minRet = useMemo(() => date ? addDays(date, 1) : '', [date]);
   // Outbound must be at least +1 day from today

@@ -131,9 +131,11 @@ async def airports_suggest(q: str = Query(..., min_length=1, max_length=64), lim
     if not q:
         return JSONResponse([])
     like = f"%{q}%"
+    # Return only code, city, country (omit airport_name & country_code from payload as requested)
+    # Still search across name to preserve discoverability.
     sql = text(
         """
-        SELECT airport_code AS code, airport_name AS name, country, country_code, city
+        SELECT airport_code AS code, city, country
         FROM airports
         WHERE airport_code LIKE :like COLLATE NOCASE
            OR airport_name LIKE :like COLLATE NOCASE
