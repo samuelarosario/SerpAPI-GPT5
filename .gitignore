@@ -91,3 +91,15 @@ Thumbs.db
 
 # Windows
 desktop.ini
+
+# --- Project specific runtime noise ---
+# Ignore SQLite runtime artifacts (do not ignore the main .db files)
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Ignore runtime logs
+runtime_logs/*
+!runtime_logs/.gitkeep
+WebApp/runtime_logs/*
+!WebApp/runtime_logs/.gitkeep
