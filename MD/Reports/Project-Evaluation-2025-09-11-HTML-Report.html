@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Project Evaluation Report - SerpAPI-GPT5 - 2025-09-11</title>
+<style>
+ body { font-family: system-ui, Arial, sans-serif; line-height: 1.45; margin: 2rem; color: #222; }
+ h1,h2,h3 { color:#14365d; }
+ code, pre { background:#f5f7fa; padding:2px 4px; border-radius:4px; font-size: 0.9rem; }
+ pre { padding:1rem; overflow:auto; }
+ .pill { display:inline-block; background:#14365d; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.65rem; letter-spacing:0.5px; }
+ .sec { margin-top:2.2rem; }
+ table { border-collapse: collapse; width:100%; margin: 1rem 0; }
+ th, td { border:1px solid #ccc; padding:6px 8px; text-align:left; font-size:0.85rem; }
+ th { background:#e9f0f7; }
+ .risk-low { color:#0a6b2b; font-weight:600; }
+ .risk-med { color:#a56900; font-weight:600; }
+ .risk-high { color:#b00020; font-weight:700; }
+ details { margin:0.5rem 0 1rem; }
+ summary { cursor:pointer; font-weight:600; }
+ .diagram { background:#fff; border:1px solid #d0d7de; padding:12px 14px; border-radius:6px; font-family: "SFMono-Regular",Consolas,monospace; font-size:13px; white-space:pre; overflow:auto; }
+ .tag { background:#eef3f8; border:1px solid #d0d7de; padding:2px 6px; font-size:0.65rem; border-radius:6px; margin-right:6px; display:inline-block; }
+ .good { color:#0a6b2b; }
+ .warn { color:#a56900; }
+ .bad { color:#b00020; }
+ .callout { border-left:4px solid #14365d; background:#f0f6fb; padding:0.75rem 1rem; margin:1.25rem 0; border-radius:4px; }
+ .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+ .card { border:1px solid #d0d7de; border-radius:6px; padding:0.85rem 0.9rem; background:#fff; }
+ .card h3 { margin-top:0; font-size:1rem; }
+ .badge { background:#14365d; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.6rem; }
+ .footer { margin-top:3rem; font-size:0.7rem; color:#666; }
+</style>
+</head>
+<body>
+<h1>SerpAPI-GPT5 Project Evaluation <span class="pill">2025-09-11</span></h1>
+<p>Comprehensive static architecture & quality review based on repository contents (Python backend + FastAPI + SQLite + caching + structured logging/metrics). This report synthesizes design, risks, and recommendations.</p>
+
+<div class="callout"><strong>Scope:</strong> Analyzed 69 tracked Python files plus configuration & tests. Focus areas: architecture, data layer, caching, API client, validation, observability, testing, maintainability, risks.</div>
+
+<h2>Executive Summary</h2>
+<ul>
+ <li><strong>Architecture:</strong> Modular core (validation, metrics, logging) with a layered flight search client providing cache-first semantics and structured persistence.</li>
+ <li><strong>Strengths:</strong> Clear separation of concerns, defensive fallbacks, schema drift detection, snapshot tooling, metrics counters, test breadth (migration, retention, rate limiting).</li>
+ <li><strong>Gaps:</strong> No typed models (Pydantic) for persisted/returned flight shapes, limited concurrency safety around SQLite writes, absence of async FastAPI integration review (file not inspected), raw retention policy indefinite by default, no central domain normalization layer extracting reusable transformations.</li>
+ <li><strong>Risk Level:</strong> Overall <span class="risk-med">Moderate</span>: manageable but watch for data growth (raw JSON), increasing complexity in `enhanced_flight_search.py` (1200+ lines).</li>
+</ul>
+
+<h2>High-Level Architecture</h2>
+<div class="diagram">+-----------------------+        +--------------------+
+|  serpapi_client       |  -->   |  External SerpAPI   |
++-----------+-----------+        +----------+---------+
+            |                               ^
+            v                               |
++-----------------------+        +----------+---------+
+| enhanced_flight_search|  <---- |  cache / DB layer  |
+|  (cache-first logic)  |        | (FlightSearchCache)|
++-----------+-----------+        +----------+---------+
+            |                               ^
+            v                               |
++----------------------+          +---------+----------+
+|  structured storage  |  <-----> |  SQLite (Main_DB)  |
++----------------------+          +--------------------+
+            |
+            v
+   +------------------+
+   |  Metrics / Logs  |
+   +------------------+</div>
+
+<h3>Flow (Typical Round Trip Search)</h3>
+<ol>
+ <li>Request enters EnhancedFlightSearchClient.search_flights()</li>
+ <li>Validation + cache key generation</li>
+ <li>Cache lookup (JOIN across flight_* tables)</li>
+ <li>On miss: API call via SerpAPIFlightClient with retries/backoff</li>
+ <li>Raw response stored (api_queries)</li>
+ <li>Structured decomposition into flight_searches / flight_results / segments / layovers / price_insights</li>
+ <li>Returned response assembled from DB (normalized shape)</li>
+ <li>Metrics increment + structured event logging</li>
+</ol>
+
+<h2>Key Components</h2>
+<div class="grid">
+ <div class="card"><h3>Config</h3><p>Central constants & environment loading. Suggest migrating to <code>pydantic-settings</code> for validation (already listed).</p></div>
+ <div class="card"><h3>SerpAPI Client</h3><p>Handles retries with jitter, parameter validation, search id generation.</p></div>
+ <div class="card"><h3>Enhanced Client</h3><p>Cache-first, inbound merge fallback, structured persistence, latency logging.</p></div>
+ <div class="card"><h3>Cache Layer</h3><p>Deterministic hash keys; includes fallback to raw if structured segments absent.</p></div>
+ <div class="card"><h3>DB Helper</h3><p>Inline migration (legacy column removal), schema version & checksum support.</p></div>
+ <div class="card"><h3>Validation</h3><p>Airport codes, horizons, passenger rules; horizon uses <code>date_utils</code>.</p></div>
+ <div class="card"><h3>Metrics</h3><p>Thread-safe counters; no persistence/export; candidate for Prometheus adapter.</p></div>
+ <div class="card"><h3>Date Utils</h3><p>Robust parsing (leap handling & rollover).</p></div>
+</div>
+
+<h2>Database & Schema Observations</h2>
+<ul>
+ <li>Automated migration path for <code>api_queries</code> legacy column indicates evolving schema maturity.</li>
+ <li>Checksum & snapshot utilities allow drift detection—strong operational hygiene.</li>
+ <li>Potential gap: No explicit foreign key cascade strategies documented (manual deletes in cleanup).</li>
+ <li>Structured tables: separation of <code>flight_results</code>, <code>flight_segments</code>, <code>layovers</code> promotes query flexibility.</li>
+ <li>Raw retention indefinite unless opt-in prune—risk of unbounded growth.</li>
+</ul>
+
+<h3>Suggested DB Enhancements</h3>
+<ul>
+ <li>Add size/age governance job for <code>api_queries</code>.</li>
+ <li>Introduce partial indexes (e.g., on recent searches) if scaling read volume.</li>
+ <li>Consider WAL checkpointing policy to mitigate file bloat.</li>
+</ul>
+
+<h2>Caching Strategy</h2>
+<p>Cache key = SHA-256 of normalized parameters; potential collision surface low. Fallback to raw JSON when structured segments absent ensures UI continuity but hides upstream parse/storage failures—log already notes fallback (good). Consider metric for fallback frequency (currently only log + generic warnings).</p>
+
+<h2>Validation & Input Safety</h2>
+<ul>
+ <li>FlightSearchValidator centralizes rules; uses environment-configurable horizon via constants—not dynamic (e.g., holiday windows).</li>
+ <li>Edge-case: multi-city path not deeply validated (only exposed via serpapi_client).</li>
+</ul>
+
+<h2>Observability</h2>
+<ul>
+ <li>Structured logging via <code>log_event</code>/<code>log_exception</code> (not fully inspected but referenced).</li>
+ <li>Metrics: latency buckets, cache hit/miss, retries, failures; missing: DB write latency, raw fallback count, cleanup durations.</li>
+</ul>
+
+<h2>Test Coverage Insights</h2>
+<p>Test filenames indicate focus on migration, schema integrity, rate limiting, retention, snapshot verification, validation, and week-range aggregation. Positive signal of proactive regression guards. Missing (inferred) tests:</p>
+<ul>
+ <li>Explicit concurrency stress (simulated parallel searches).</li>
+ <li>Fallback inbound merge path (round-trip missing inbound).</li>
+ <li>Cache key stability regression test (list of params hashed & contract enforcement).</li>
+</ul>
+
+<h2>Complexity Hotspots</h2>
+<table>
+ <tr><th>File</th><th>Approx. Lines</th><th>Concern</th><th>Recommendation</th></tr>
+ <tr><td>enhanced_flight_search.py</td><td>1200</td><td>Monolithic class mixing orchestration, persistence calls, and fallback logic</td><td>Refactor into smaller services (CacheService, InboundMergeStrategy, PersistenceWriter)</td></tr>
+ <tr><td>database_helper.py</td><td>470</td><td>Inline migration & schema utilities co-located with CRUD</td><td>Split migration/versioning into separate module</td></tr>
+</table>
+
+<h2>Security Posture</h2>
+<ul>
+ <li>API key loading from environment only (good); raise if missing.</li>
+ <li>No secrets committed (spot check only).</li>
+ <li>Potential improvement: central redact helper for log sanitization.</li>
+</ul>
+
+<h2>Risk Register</h2>
+<table>
+ <tr><th>Risk</th><th>Impact</th><th>Likelihood</th><th>Level</th><th>Mitigation</th></tr>
+ <tr><td>Unbounded raw JSON growth</td><td>Disk exhaustion, slower backups</td><td>Med</td><td class="risk-med">Medium</td><td>Introduce retention policy & size monitoring</td></tr>
+ <tr><td>SQLite concurrency limits</td><td>Write contention under scale</td><td>Low-Med</td><td class="risk-med">Medium</td><td>Queue writes or migrate to Postgres when QPS rises</td></tr>
+ <tr><td>Monolithic search client complexity</td><td>Slower onboarding, hidden bugs</td><td>Med</td><td class="risk-med">Medium</td><td>Service extraction, add unit tests at boundaries</td></tr>
+ <tr><td>Silent structured parse failures</td><td>Data shape drift in UI</td><td>Low</td><td class="risk-low">Low</td><td>Add metric for raw fallback usage</td></tr>
+ <tr><td>Missing async for I/O heavy operations</td><td>Event loop blocking (if used with FastAPI)</td><td>Med (if synchronous endpoints)</td><td class="risk-med">Medium</td><td>Provide async wrappers or run in threadpool proactively</td></tr>
+ <tr><td>Validation gaps for multi-city</td><td>Malformed queries upstream</td><td>Low</td><td class="risk-low">Low</td><td>Extend validator for multi-city JSON schema</td></tr>
+</table>
+
+<h2>Recommended Roadmap (Next 30-90 Days)</h2>
+<ol>
+ <li><strong>Refactor:</strong> Extract flight persistence & inbound merge logic from enhanced client.</li>
+ <li><strong>Type Enforcement:</strong> Introduce Pydantic models for flight result & segment shapes.</li>
+ <li><strong>Metrics Expansion:</strong> Add DB timing, raw fallback, cleanup counters.</li>
+ <li><strong>Retention:</strong> Implement configurable raw response TTL (e.g., 30d) with periodic vacuum.</li>
+ <li><strong>Testing:</strong> Add concurrency stress & cache key contract tests.</li>
+ <li><strong>Observability:</strong> Provide /metrics endpoint (Prometheus) or export snapshot function.</li>
+ <li><strong>Async Strategy:</strong> Evaluate FastAPI endpoints for blocking risk; move network + DB to worker thread or adopt async client.</li>
+ <li><strong>Modular Migrations:</strong> Replace inline migration with versioned migration scripts (alembic or simple numbered SQL files).</li>
+</ol>
+
+<h2>Illustrative Mermaid Diagrams</h2>
+<p>These can be pasted into a Mermaid-compatible renderer.</p>
+<pre class="diagram">flowchart TD
+  A[Request: search_flights] --> B{Cache Hit?}
+  B -- Yes --> C[Return Cached Result]
+  B -- No --> D[Validate Params]
+  D --> E[SerpAPI API Call w/ Retry]
+  E --> F[Store Raw Response]
+  F --> G[Parse & Store Structured]
+  G --> H[Assemble Response From DB]
+  H --> I[Emit Metrics + Logs]
+  I --> J[Return API Result]
+</pre>
+
+<pre class="diagram">erDiagram
+  flight_searches ||--o{ flight_results : contains
+  flight_results ||--o{ flight_segments : has
+  flight_results ||--o{ layovers : may_have
+  flight_results ||--o{ price_insights : has_one
+  api_queries ||--o{ flight_searches : source_optional
+</pre>
+
+<h2>Code Quality Highlights</h2>
+<ul>
+ <li>Consistent logging patterns with structured events.</li>
+ <li>Index creation is idempotent and defensive.</li>
+ <li>Validation separates horizon vs structural checks (extensible).</li>
+ <li>Test suite breadth indicates maturity focus on schema governance.</li>
+</ul>
+
+<h2>Opportunities for Improvement</h2>
+<ul>
+ <li>Introduce layering: API Client / Domain Transformer / Repository / Service.</li>
+ <li>Adopt dependency inversion for DB access (interface for easier mocking).</li>
+ <li>Implement feature flags for experimental behaviors (inbound merge fallback).</li>
+ <li>Add central error taxonomy (enum codes) for easier UI mapping.</li>
+</ul>
+
+<h2>Quick Wins</h2>
+<ul>
+ <li>Add metric: <code>raw_fallback_count</code>.</li>
+ <li>Add test ensuring <code>cache.generate_cache_key</code> includes new functional params.</li>
+ <li>Provide CLI command to purge raw beyond N days.</li>
+ <li>Document data retention and schema evolution policy in README.</li>
+</ul>
+
+<h2>Sample Pydantic Model (Suggestion)</h2>
+<pre>from pydantic import BaseModel
+class FlightSegment(BaseModel):
+    departure_airport: str
+    arrival_airport: str
+    airline: str | None
+    flight_number: str | None
+    departure_time: str
+    arrival_time: str
+    duration_minutes: int
+</pre>
+
+<h2>Conclusion</h2>
+<p>The project exhibits solid architectural foundations with strong emphasis on schema integrity and operational tooling. Strategic refactoring and enhanced observability will position it well for scaling beyond current single-node SQLite + in-memory metrics constraints.</p>
+
+<div class="footer">Generated: 2025-09-11 • Automated static analysis (no runtime execution of API calls). • File: Project-Evaluation-2025-09-11-HTML-Report.html</div>
+</body>
+</html>

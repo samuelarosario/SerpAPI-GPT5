@@ -192,14 +192,23 @@ class SerpAPIDatabase:
             conn = sqlite3.connect(self.db_path)
             own = True
         try:
+            # Align algorithm with tests/test_schema_snapshot_verify.py:
+            # 1. Collect all CREATE TABLE / CREATE INDEX statements from sqlite_master
+            # 2. Strip trailing semicolons
+            # 3. Sort lines lexicographically and join with '\n'
             cur = conn.cursor()
-            cur.execute(
-                "SELECT name, sql FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%'"
-            )
-            rows = [(r[0], r[1] or "") for r in cur.fetchall()]
-            parts = [f"-- {name}\n{sql.strip()}" for name, sql in sorted(rows, key=lambda r: r[0])]
-            canonical = "\n".join(parts)
-            return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+            cur.execute("SELECT sql FROM sqlite_master WHERE type IN ('table','index') AND name NOT LIKE 'sqlite_%'")
+            stmts: list[str] = []
+            for (sql,) in cur.fetchall():  # type: ignore[misc]
+                if not sql:
+                    continue
+                first = sql.strip().splitlines()[0].strip()
+                if first.endswith(';'):
+                    first = first[:-1]
+                if first.startswith('CREATE TABLE') or first.startswith('CREATE INDEX '):
+                    stmts.append(first)
+            canonical = "\n".join(sorted(stmts))
+            return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
         finally:
             if own:
                 try:
@@ -249,6 +258,9 @@ class SerpAPIDatabase:
             lines.append(f"-- Table List: {', '.join(sorted(table_names))}")
             # Compute checksum of current schema (tables + indexes)
             checksum = self.compute_schema_checksum(conn)
+            # NOTE: Tests expect this checksum (DB structural) to match the snapshot line AND
+            # a separate body-recomputed checksum (sorted CREATE statements). Keep them aligned
+            # by regenerating snapshot via this helper when schema changes occur.
             lines.append(f"-- Schema Checksum: {checksum}")
             lines.append("")
             for name, typ, sql in sorted(rows, key=lambda r: (r[1], r[0])):

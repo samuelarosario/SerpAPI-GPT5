@@ -1,0 +1,58 @@
+{
+  "nodes": [
+    "DB.__init__",
+    "DB.cleanup_city_parentheticals",
+    "DB.convert_timezone_to_offset",
+    "DB.database_helper",
+    "DB.enrich_country_timezone",
+    "DB.migrate_drop_query_timestamp",
+    "DB.normalize_timezone_to_utc_format",
+    "DB.update_airports_from_csv",
+    "Main.__init__",
+    "Main._tmp_db_inspect",
+    "Main.cache",
+    "Main.config",
+    "Main.constants",
+    "Main.core.common_validation",
+    "Main.core.db_utils",
+    "Main.core.logging_setup",
+    "Main.core.metrics",
+    "Main.core.structured_logging",
+    "Main.enhanced_flight_search",
+    "Main.flight_processor",
+    "Main.metrics_cli",
+    "Main.models.flight_models",
+    "Main.persistence.structured_writer",
+    "Main.serpapi_client",
+    "Main.services.__init__",
+    "Main.services.cli_date_parser",
+    "Main.services.inbound_merge",
+    "Main.services.week_aggregator",
+    "Main.session_cleanup",
+    "Main.side_effects"
+  ],
+  "edges": {
+    "Main.enhanced_flight_search": [
+      "Main"
+    ],
+    "Main.metrics_cli": [
+      "Main"
+    ],
+    "Main.serpapi_client": [
+      "Main"
+    ],
+    "Main.core.common_validation": [
+      "Main"
+    ],
+    "Main.persistence.structured_writer": [
+      "Main"
+    ],
+    "Main.services.inbound_merge": [
+      "Main"
+    ],
+    "Main.services.week_aggregator": [
+      "Main"
+    ]
+  },
+  "mermaid": "graph LR\n  Main_enhanced_flight_search--> Main\n  Main_metrics_cli--> Main\n  Main_serpapi_client--> Main\n  Main_core_common_validation--> Main\n  Main_persistence_structured_writer--> Main\n  Main_services_inbound_merge--> Main\n  Main_services_week_aggregator--> Main"
+}

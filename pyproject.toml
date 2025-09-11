@@ -13,3 +13,9 @@ warn_return_any = true
 warn_unreachable = true
 disable_error_code = []
 exclude = ["tests/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]

@@ -2,7 +2,7 @@
 -- Generated: 2025-09-10T17:44:16.666146
 -- Tables: 13
 -- Table List: User, airlines, airports, api_queries, database_metadata, flight_results, flight_searches, flight_segments, layovers, migration_history, price_insights, route_analytics, schema_version
--- Schema Checksum: 30d4855e6c100a508e99f976017719f15c05029772b247251dea7945dde14f9b
+-- Schema Checksum: a8d469f342cb4d2f9860cf4dd1bcdaddf0d49286822b5ad369fd17e2a4669045
 
 -- INDEX: idx_airlines_code
 CREATE INDEX idx_airlines_code ON airlines(airline_code);

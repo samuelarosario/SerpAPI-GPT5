@@ -8,7 +8,7 @@ This directory will contain the upcoming web application layer for the flight da
 - Integrate later with existing flight search core modules.
 
 ## Current Status
-Running: Auth, user bootstrap, JWT-based /auth endpoints, and a Flight Search UI with a working `/api/flight_search` proxy into the EnhancedFlightSearch client. UI supports optional Return date and separates results via Outbound/Inbound tabs with independent sorting & pagination per tab.
+Auth (JWT), user bootstrap, `/auth/*` endpoints, flight search API `/api/flight_search`, airport/airline lookup endpoints, and React SPA (optional). The legacy inline flight search HTML has been removed; a single FastAPI port (default 8013) now serves both API and built React assets when `react-frontend/dist` exists.
 
 ## Planned Stack (Subject to refinement)
 - Framework: FastAPI (async, modern, OpenAPI generation).
@@ -31,16 +31,19 @@ Running: Auth, user bootstrap, JWT-based /auth endpoints, and a Flight Search UI
 4. Implement registration & login endpoints (issue JWT).
 5. Write tests under `tests/webapp/` for auth flows.
 
-## How to run (Windows PowerShell)
+## How to run (Windows PowerShell, single port)
 
 ```powershell
-# From repo root
+# From repo root (installs Python deps, installs+builds React, starts uvicorn on 8013)
 .\scripts\bootstrap.ps1 -RunServer
 
-# Then visit:
+# Visit:
 # http://127.0.0.1:8013/
-# Demo users are auto-created:
+# If WebApp/react-frontend/dist exists, React SPA is served.
+# Demo users:
 #   user@local / user
 #   admin@local / admin
 ```
+
+Dev (hot reload) option: you can still run `scripts/start-react.ps1` for Vite dev on 5173; the proxy forwards to 8013. This is optional after production build integration.
 

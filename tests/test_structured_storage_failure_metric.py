@@ -43,7 +43,8 @@ def test_structured_storage_failure_increments_metric(monkeypatch):
 
     from datetime import datetime, timedelta
     future_date = (datetime.now() + timedelta(days=10)).strftime('%Y-%m-%d')
-    result = client.search_flights('AAA','BBB', future_date)
+    # Force cache bypass (age 0) to exercise structured storage path
+    result = client.search_flights('AAA','BBB', future_date, max_cache_age_hours=0)
     assert result['success'] is True
     snap = METRICS.snapshot()
     assert snap.get('structured_storage_failures', 0) == 1
