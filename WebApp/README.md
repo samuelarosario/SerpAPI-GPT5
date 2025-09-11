@@ -8,7 +8,7 @@ This directory will contain the upcoming web application layer for the flight da
 - Integrate later with existing flight search core modules.
 
 ## Current Status
-Auth (JWT), user bootstrap, `/auth/*` endpoints, flight search API `/api/flight_search`, airport/airline lookup endpoints, and React SPA (optional). The legacy inline flight search HTML has been removed; a single FastAPI port (default 8013) now serves both API and built React assets when `react-frontend/dist` exists.
+Auth (JWT), user bootstrap, `/auth/*` endpoints, flight search API `/api/flight_search`, airport/airline lookup endpoints, and React SPA (optional). The legacy inline flight search HTML has been removed; a single FastAPI port (default 8000) now serves both API and built React assets when `react-frontend/dist` exists.
 
 ## Planned Stack (Subject to refinement)
 - Framework: FastAPI (async, modern, OpenAPI generation).
@@ -34,16 +34,16 @@ Auth (JWT), user bootstrap, `/auth/*` endpoints, flight search API `/api/flight_
 ## How to run (Windows PowerShell, single port)
 
 ```powershell
-# From repo root (installs Python deps, installs+builds React, starts uvicorn on 8013)
+# From repo root (installs Python deps, installs+builds React, starts uvicorn on 8000)
 .\scripts\bootstrap.ps1 -RunServer
 
 # Visit:
-# http://127.0.0.1:8013/
+# http://127.0.0.1:8000/
 # If WebApp/react-frontend/dist exists, React SPA is served.
 # Demo users:
 #   user@local / user
 #   admin@local / admin
 ```
 
-Dev (hot reload) option: you can still run `scripts/start-react.ps1` for Vite dev on 5173; the proxy forwards to 8013. This is optional after production build integration.
+Dev (hot reload) option: you can still run `scripts/start-react.ps1` for Vite dev on 9000; the proxy forwards to 8000. This is optional after production build integration.
 

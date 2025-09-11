@@ -1,6 +1,6 @@
 param(
   [string] $BindHost = '127.0.0.1',
-  [int] $Port = 5173
+  [int] $Port = 9000
 )
 $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot\stop-react.ps1" -Port $Port

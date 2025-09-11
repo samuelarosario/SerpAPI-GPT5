@@ -8,13 +8,13 @@ Behavior (made permanent per request):
 - Waits briefly and verifies the port is listening; prints status.
 
 Usage:
-  .\scripts\start-webapp.ps1                            # start on 127.0.0.1:8013
+  .\scripts\start-webapp.ps1                            # start on 127.0.0.1:8000
   .\scripts\start-webapp.ps1 -BindHost 0.0.0.0 -Port 9000 # custom bind
 #>
 
 param(
   [string] $BindHost = "127.0.0.1",
-  [int] $Port = 8013,
+  [int] $Port = 8000,
   [switch] $Foreground
 )
 
