@@ -45,5 +45,8 @@ Auth (JWT), user bootstrap, `/auth/*` endpoints, flight search API `/api/flight_
 #   admin@local / admin
 ```
 
-Dev (hot reload) option: you can still run `scripts/start-react.ps1` for Vite dev (default 5173); the proxy forwards API calls to 8000. This is optional after production build integration.
+Dev (hot reload) option: run Vite directly from `WebApp/react-frontend` if needed:
+	- npm install
+	- npm run dev (default 5173)
+The backend continues to run on 8000; Vite proxies /api,/auth,/health to 8000.
 

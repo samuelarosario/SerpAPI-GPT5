@@ -56,3 +56,12 @@ try {
 } finally {
   Pop-Location
 }
+
+# Deprecated: React dev scripts are no longer used.
+# The production server (FastAPI) serves the built SPA on port 8000.
+# For local hot-reload development, run from WebApp/react-frontend:
+#   npm install
+#   npm run dev
+
+Write-Host "[start-react] Deprecated. Use 'npm run dev' from WebApp/react-frontend (default 5173)." -ForegroundColor Yellow
+exit 0

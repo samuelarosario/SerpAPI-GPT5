@@ -3,5 +3,6 @@ param(
   [int] $Port = 5173
 )
 $ErrorActionPreference = 'Stop'
-& "$PSScriptRoot\stop-react.ps1" -Port $Port
-& "$PSScriptRoot\start-react.ps1" -BindHost $BindHost -Port $Port
+# Deprecated: React dev scripts are no longer used.
+Write-Host "[restart-react] Deprecated. Use 'npm run dev' from WebApp/react-frontend for local hot reload." -ForegroundColor Yellow
+exit 0
