@@ -568,16 +568,35 @@ export default function App() {
   if(!authed){
     return <Login onLogin={()=> setAuthed(true)} />;
   }
+  const isFlightSearch = typeof window !== 'undefined' && window.location.pathname.startsWith('/flight-search');
+
+  // Landing page (root /) mirrors production minimal page with a logout in header if authed
+  if (!isFlightSearch) {
+    return (
+      <div style={{fontFamily:'Inter, system-ui, sans-serif', minHeight:'100vh', display:'flex', flexDirection:'column'}}>
+        <div style={{display:'flex', justifyContent:'flex-end', padding:12}}>
+          {authed ? (
+            <button onClick={handleLogout} style={{fontSize:12, padding:'4px 10px', border:'1px solid #0f172a', borderRadius:6, background:'#fff', color:'#0f172a', cursor:'pointer'}}>Logout</button>
+          ) : null}
+        </div>
+        <div style={{flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#f8fafc', color:'#0f172a'}}>
+          <div style={{textAlign:'center'}}>
+            <h2 style={{margin:'0 0 12px'}}>Welcome</h2>
+            <a href='/flight-search' style={{display:'inline-block', padding:'10px 16px', border:'1px solid #0f172a', borderRadius:8, color:'#0f172a', background:'#fff', textDecoration:'none'}}>Open Flight Search</a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // If navigating to /flight-search and not authenticated, show login screen
+  if (!authed) {
+    return <Login onLogin={()=> setAuthed(true)} />;
+  }
+
   return (
     <div style={{fontFamily:'Inter, system-ui, sans-serif', padding:16}}>
-      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
-        <h2>Flight Search</h2>
-        {authed && (
-          <button onClick={handleLogout} style={{fontSize:12, padding:'4px 10px', border:'1px solid #d1d5db', borderRadius:6, background:'#fff', color:'#475569', cursor:'pointer'}}>
-            Logout
-          </button>
-        )}
-      </div>
+      <h2>Flight Search</h2>
       <div style={{display:'flex', gap:12, rowGap:8, flexWrap:'wrap', alignItems:'flex-end'}}>
         <AirportSuggestInput ref={originRef} placeholder="Origin (code, name, city, country)" style={{ width: 260, flex: '0 0 260px' }} airportsReady={airportsReady} airportList={airportList} />
         <AirportSuggestInput ref={destRef} placeholder="Destination (code, name, city, country)" style={{ width: 280, flex: '0 0 280px' }} airportsReady={airportsReady} airportList={airportList} />
