@@ -391,6 +391,14 @@ export default function App() {
     })();
   }, [token]);
   
+  async function handleLogout(){
+    try{
+      const t = localStorage.getItem('access_token');
+      if(t){ await fetch('/auth/logout', { method:'POST', headers:{ Authorization: `Bearer ${t}` } }); }
+    }catch{}
+    try{ localStorage.removeItem('access_token'); localStorage.removeItem('refresh_token'); }catch{}
+    setAuthed(false);
+  }
 
   
 
@@ -562,7 +570,14 @@ export default function App() {
   }
   return (
     <div style={{fontFamily:'Inter, system-ui, sans-serif', padding:16}}>
-  <h2>Flight Search</h2>
+      <div style={{display:'flex', alignItems:'center', justifyContent:'space-between'}}>
+        <h2>Flight Search</h2>
+        {authed && (
+          <button onClick={handleLogout} style={{fontSize:12, padding:'4px 10px', border:'1px solid #d1d5db', borderRadius:6, background:'#fff', color:'#475569', cursor:'pointer'}}>
+            Logout
+          </button>
+        )}
+      </div>
       <div style={{display:'flex', gap:12, rowGap:8, flexWrap:'wrap', alignItems:'flex-end'}}>
         <AirportSuggestInput ref={originRef} placeholder="Origin (code, name, city, country)" style={{ width: 260, flex: '0 0 260px' }} airportsReady={airportsReady} airportList={airportList} />
         <AirportSuggestInput ref={destRef} placeholder="Destination (code, name, city, country)" style={{ width: 280, flex: '0 0 280px' }} airportsReady={airportsReady} airportList={airportList} />
