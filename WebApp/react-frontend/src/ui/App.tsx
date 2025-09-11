@@ -337,7 +337,6 @@ export default function App() {
   const [authed, setAuthed] = useState<boolean | null>(null);
   // Criteria values captured on search submit (avoid re-render on each keystroke)
   const [criteriaOrigin, setCriteriaOrigin] = useState('');
-  const [criteriaDest, setCriteriaDest] = useState('');
   const [date, setDate] = useState(tomorrow());
   const [ret, setRet] = useState('');
   const [trip, setTrip] = useState<'round'|'oneway'>('round');
@@ -474,7 +473,7 @@ export default function App() {
     }
     setBusy(true);
     try {
-  setCriteriaOrigin(O); setCriteriaDest(D);
+  setCriteriaOrigin(O);
   const q1 = `/api/flight_search?origin=${encodeURIComponent(O)}&destination=${encodeURIComponent(D)}&date=${encodeURIComponent(date)}&travel_class=${encodeURIComponent(tclass)}&one_way=1`;
       const r1 = await authFetch(q1); const j1 = await r1.json();
       if(!j1?.success){ setError(j1?.error||'Search failed'); setBusy(false); return; }
@@ -587,7 +586,7 @@ export default function App() {
       {(meta.out || meta.in) && (
         <div style={{marginTop:12, border:'1px solid #e5e7eb', background:'#f8fafc', borderRadius:8, padding:10, color:'#334155'}}>
           <div style={{fontSize:13, marginBottom:6}}>
-            <strong>Criteria:</strong> {criteriaOrigin||'—'} → {criteriaDest||'—'} on {date||'—'}{trip!=='oneway' && ret? ` • return ${ret}`:''} • class {({ '1':'Economy','2':'Premium Economy','3':'Business','4':'First' } as any)[tclass] || 'Economy'}
+              <strong>Criteria:</strong> {criteriaOrigin||'—'} on {date||'—'}{trip!=='oneway' && ret? ` • return ${ret}`:''} • class {({ '1':'Economy','2':'Premium Economy','3':'Business','4':'First' } as any)[tclass] || 'Economy'}
           </div>
           {meta.out && (
             <div style={{fontSize:12, marginBottom:4}}>
