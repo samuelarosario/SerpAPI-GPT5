@@ -8,6 +8,8 @@ from sqlalchemy import text
 from WebApp.app.db.session import engine
 
 from WebApp.app.auth.routes import router as auth_router
+from WebApp.app.core.config import settings
+from Main.core.metrics import METRICS  # type: ignore
 # Lazy import helper for EnhancedFlightSearchClient to avoid modifying existing EFS modules
 import sys, os, logging
 _EFS_SINGLETON = None  # module-level cache
@@ -268,6 +270,13 @@ async def admin_portal(request: Request):
 @app.get("/health", tags=["system"])
 async def health() -> dict:
     return {"status": "ok"}
+
+@app.get("/metrics", tags=["system"])
+async def metrics() -> JSONResponse:
+    if not settings.enable_metrics_endpoint:
+        raise HTTPException(status_code=404, detail="Not Found")
+    snap = METRICS.snapshot()
+    return JSONResponse(snap)
 
 # Final SPA fallback (must be last) so explicit routes (/health, /api, etc.) work.
 @app.get("/{full_path:path}", response_class=HTMLResponse, include_in_schema=False)
