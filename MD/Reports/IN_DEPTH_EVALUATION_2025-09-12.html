@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>In-Depth Evaluation Report - SerpAPI-GPT5 - 2025-09-12</title>
+<style>
+ body { font-family: system-ui, Arial, sans-serif; line-height: 1.45; margin: 2rem; color: #222; }
+ h1,h2,h3 { color:#14365d; }
+ code, pre { background:#f5f7fa; padding:2px 4px; border-radius:4px; font-size: 0.9rem; }
+ pre { padding:1rem; overflow:auto; }
+ .pill { display:inline-block; background:#14365d; color:#fff; padding:2px 8px; border-radius:12px; font-size:0.65rem; letter-spacing:0.5px; }
+ .sec { margin-top:2.2rem; }
+ table { border-collapse: collapse; width:100%; margin: 1rem 0; }
+ th, td { border:1px solid #ccc; padding:6px 8px; text-align:left; font-size:0.85rem; }
+ th { background:#e9f0f7; }
+ .risk-low { color:#0a6b2b; font-weight:600; }
+ .risk-med { color:#a56900; font-weight:600; }
+ .risk-high { color:#b00020; font-weight:700; }
+ details { margin:0.5rem 0 1rem; }
+ summary { cursor:pointer; font-weight:600; }
+ .diagram { background:#fff; border:1px solid #d0d7de; padding:12px 14px; border-radius:6px; font-family: "SFMono-Regular",Consolas,monospace; font-size:13px; white-space:pre; overflow:auto; }
+ .tag { background:#eef3f8; border:1px solid #d0d7de; padding:2px 6px; font-size:0.65rem; border-radius:6px; margin-right:6px; display:inline-block; }
+ .good { color:#0a6b2b; }
+ .warn { color:#a56900; }
+ .bad { color:#b00020; }
+ .callout { border-left:4px solid #14365d; background:#f0f6fb; padding:0.75rem 1rem; margin:1.25rem 0; border-radius:4px; }
+ .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
+ .card { border:1px solid #d0d7de; border-radius:6px; padding:0.85rem 0.9rem; background:#fff; }
+ .card h3 { margin-top:0; font-size:1rem; }
+ .badge { background:#14365d; color:#fff; padding:2px 6px; border-radius:4px; font-size:0.6rem; }
+ .footer { margin-top:3rem; font-size:0.7rem; color:#666; }
+ ul { margin: .6rem 0 .6rem 1.3rem; }
+ ol { margin: .6rem 0 .6rem 1.3rem; }
+</style>
+</head>
+<body>
+<h1>In-Depth Project Evaluation <span class="pill">2025-09-12</span></h1>
+<p>Comprehensive end-to-end evaluation of the SerpAPI Flight Data System across architecture, data, runtime, WebApp, testing, security, performance, and operational readiness. Grounded in current repository state and code inspection.</p>
+
+<div class="callout"><strong>Highlights:</strong> Cohesive orchestrator + services + persistence; strict raw-first storage; strong tests and schema governance; WebApp ready with FastAPI + optional SPA. Main gaps: metrics export and optional raw compression.</div>
+
+<h2>Executive Summary</h2>
+<ul>
+ <li><strong>Core strength:</strong> EnhancedFlightSearch orchestrates validation, cache, API, inbound-merge, week aggregation, and structured writes.</li>
+ <li><strong>WebApp:</strong> FastAPI, JWT auth, airports/airlines APIs, SPA integration; admin portal skeleton included.</li>
+ <li><strong>Observability:</strong> Structured JSON events + in-memory metrics; exporter not yet implemented.</li>
+ <li><strong>Database:</strong> Schema manifest + checksum snapshot; legacy migration automated; cache indexes; drift detection.</li>
+ <li><strong>Immediate wins:</strong> Prometheus/OTel export, optional gzip of raw JSON, CI pipeline (added), log ingestion HOWTO, selective lint fixes.</li>
+</ul>
+
+<h2>Architecture & Code Health</h2>
+<ul>
+ <li><strong>Orchestrator:</strong> <code>Main/enhanced_flight_search.py</code> coordinates flow; CLI convenience embedded but modularization points are clear.</li>
+ <li><strong>Services:</strong> inbound merge, week aggregator, CLI date parsing under <code>Main/services/</code>.</li>
+ <li><strong>Persistence:</strong> <code>Main/persistence/structured_writer.py</code> writes normalized tables; raw stored first.</li>
+ <li><strong>Core utils:</strong> validation, db utils, logging setup, metrics, structured logging in <code>Main/core/</code>.</li>
+ <li><strong>Client:</strong> <code>Main/serpapi_client.py</code> with jittered retries, validation, metrics/events.</li>
+ <li><strong>Cache:</strong> <code>Main/cache.py</code> with stable cache_key, cleanup policy, raw fallback.</li>
+</ul>
+
+<h2>Data Model & Database</h2>
+<ul>
+ <li><strong>SQLite:</strong> <code>DB/Main_DB.db</code> tracked; WAL/SHM ignored.</li>
+ <li><strong>Helper:</strong> automated migration (drop legacy <code>query_timestamp</code>), schema version manifest, checksum snapshot to <code>DB/current_schema.sql</code>.</li>
+ <li><strong>Key tables:</strong> <code>api_queries</code>, <code>flight_searches</code>, <code>flight_results</code>, <code>flight_segments</code>, <code>layovers</code>, <code>airports</code>, <code>airlines</code>, <code>price_insights</code>, <code>route_analytics</code>, <code>schema_version</code>, <code>migration_history</code>.</li>
+ <li><strong>Indexes:</strong> cache_key, price_insights unique, created_at on api_queries; composite route+date index defensively ensured.</li>
+ <li><strong>Policy:</strong> raw retained indefinitely unless explicit pruning; structured cache pruned by age.</li>
+</ul>
+
+<h2>WebApp Layer</h2>
+<ul>
+ <li><strong>Framework:</strong> FastAPI; serves SPA build if present; single-port mode.</li>
+ <li><strong>Endpoints:</strong> UI <code>/</code>, <code>/flight-search</code>, <code>/dashboard</code>, <code>/admin</code>; API <code>/api/flight_search</code>, airports/airlines lookups; <code>/health</code>.</li>
+ <li><strong>Auth:</strong> JWT with user management; logs auth events to <code>WebApp/runtime_logs/auth_events.jsonl</code> (ignored in Git).</li>
+</ul>
+
+<h2>Testing & Tooling</h2>
+<ul>
+ <li>28+ tests incl. migration, FK integrity, cache, CLI parsing, retry simulation, schema checksum/snapshot, structured writer, validation, week aggregator.</li>
+ <li>Ruff + mypy configured; pytest settings inside <code>pyproject.toml</code>.</li>
+ <li><strong>CI:</strong> Added GitHub Actions to run tests (3.11/3.12/3.13) and non-blocking lint.</li>
+</ul>
+
+<h2>Observability</h2>
+<ul>
+ <li><strong>Structured events:</strong> <code>Main/core/structured_logging.py</code> with <code>Main/constants.Event</code>.</li>
+ <li><strong>Metrics:</strong> in-memory counters (api_calls, failures, latency buckets, cache hits/misses, retries). No exporter yet.</li>
+ <li><strong>Logs:</strong> app logs under <code>Main/logs/</code>; WebApp logs under <code>WebApp/runtime_logs/</code>.</li>
+</ul>
+
+<h2>Security & Configuration</h2>
+<ul>
+ <li><strong>API key:</strong> <code>SERPAPI_KEY</code> via env or .env; raises if missing.</li>
+ <li><strong>Auth:</strong> Argon2/bcrypt hashing; roles; admin routes guarded.</li>
+ <li><strong>Ports:</strong> backend 8000; Vite dev 5173; SPA proxy configured.</li>
+</ul>
+
+<h2>Performance & Reliability</h2>
+<ul>
+ <li><strong>Retries:</strong> jittered exponential backoff; latency buckets per attempt; rate limiting guard.</li>
+ <li><strong>Cache:</strong> 24h default freshness; raw fallback ensures UI resilience.</li>
+ <li><strong>Week range:</strong> aggregation + trend analysis implemented.</li>
+ <li><strong>Integrity:</strong> FK enforced; drift detection and integrity checks available.</li>
+</ul>
+
+<h2>Risks & Gaps</h2>
+<table>
+ <tr><th>Area</th><th>Risk</th><th>Mitigation</th><th>Priority</th></tr>
+ <tr><td>Metrics export</td><td>Ephemeral in-process</td><td>Add <code>/metrics</code> or exporter</td><td class="risk-med">P1</td></tr>
+ <tr><td>Raw size growth</td><td>Large JSON accumulation</td><td>Optional gzip + retention flags</td><td class="risk-med">P1-P2</td></tr>
+ <tr><td>Retry coverage</td><td>Limited multi-attempt scenarios</td><td>Add targeted tests</td><td class="risk-med">P2</td></tr>
+ <tr><td>Concurrency</td><td>SQLite write contention at scale</td><td>Queue writes / consider Postgres if QPS grows</td><td class="risk-low">P3</td></tr>
+ <tr><td>DB in Git</td><td>Repo bloat over time</td><td>Consider Git LFS for <code>*.db</code></td><td class="risk-low">P3</td></tr>
+</table>
+
+<h2>Recommendations</h2>
+<ol>
+ <li><strong>Metrics export:</strong> Add optional Prometheus endpoint; keep disabled by default.</li>
+ <li><strong>Raw compression:</strong> Config flag and transparent reads for gziped raw JSON.</li>
+ <li><strong>CI hardening:</strong> Keep tests on 3.11–3.13; publish coverage; enforce modest ruff rules gradually.</li>
+ <li><strong>Retry tests:</strong> Simulate transient failures for first N attempts; assert metrics and logs.</li>
+ <li><strong>Log HOWTO:</strong> Document <code>jq</code>/PowerShell tips for JSONL consumption.</li>
+ <li><strong>Schema snapshot:</strong> Task to regenerate <code>current_schema.sql</code> and verify checksum in CI.</li>
+ <li><strong>Git LFS (optional):</strong> Track <code>*.db</code> for healthier repo over time.</li>
+</ol>
+
+<h2>Developer Experience</h2>
+<ul>
+ <li>Add VS Code tasks: <em>Test: Run</em> and <em>Lint: Ruff</em>.</li>
+ <li>Extend <code>scripts/bootstrap.ps1</code> with <code>--lint</code> / <code>--test</code>.</li>
+ <li>Consolidate Quick Start in <code>MD/README.md</code> with WebApp modes and ports.</li>
+</ul>
+
+<h2>How To Run</h2>
+<pre class="diagram"># Environment
+. .\.venv\Scripts\Activate.ps1
+
+# Lint & tests
+ruff check .
+pytest -q
+
+# WebApp
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-webapp.ps1
+
+# CLI sample
+python Main/enhanced_flight_search.py LAX JFK 15-09-2025 22-09-2025 --adults 2
+</pre>
+
+<h2>Appendices</h2>
+<ul>
+ <li><strong>Return date auto-generation:</strong> +7 days if not provided (round-trip) to maximize data capture.</li>
+ <li><strong>Default travel class:</strong> Business (3); ensure UI communicates this default.</li>
+ <li><strong>Raw-first storage:</strong> UI can fall back to raw payload if structured segments absent.</li>
+ <li><strong>Schema governance:</strong> checksum snapshot + manifest and ledger.</li>
+</ul>
+
+<h2>Current Repository Signals</h2>
+<ul>
+ <li><strong>Branch:</strong> master in sync with origin after latest push.</li>
+ <li><strong>Ignored artifacts:</strong> <code>*.db-wal</code>, <code>*.db-shm</code>, <code>*.db-journal</code>, runtime logs.</li>
+ <li><strong>Tracked DB:</strong> <code>DB/Main_DB.db</code> intentionally versioned.</li>
+</ul>
+
+<div class="footer">Generated: 2025-09-12 • File: IN_DEPTH_EVALUATION_2025-09-12.html</div>
+</body>
+</html>
